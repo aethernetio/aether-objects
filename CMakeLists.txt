@@ -30,6 +30,7 @@ endif()
 option(AE_BUILD_TESTS "Build tests" ${IS_ROOT_PROJECT} )
 option(AE_INSTALL "Install aether-objects library" ${IS_ROOT_PROJECT} )
 option(AE_NO_DEBUG_LOG "Do not print debug logs" !${IS_ROOT_PROJECT} )
+set(AE_LOGGER_INCLUDE "" CACHE STRING "Custom header for logger")
 
 include(cmake/CPM.cmake)
 
@@ -66,6 +67,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 target_link_libraries(${PROJECT_NAME} PUBLIC aether::miscpp)
 
+if(NOT "${AE_LOGGER_INCLUDE}" STREQUAL "")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC "AE_LOGGER_INCLUDE=${AE_LOGGER_INCLUDE}")
+endif()
 if(AE_NO_DEBUG_LOG)
   target_compile_definitions(${PROJECT_NAME} PUBLIC "AE_NO_DEBUG_LOG=1")
 endif()

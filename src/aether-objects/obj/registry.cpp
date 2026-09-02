@@ -117,8 +117,8 @@ std::string_view Registry::ClassName(std::uint32_t class_id) {
 void Registry::Log() {
 #ifndef NDEBUG
   for (const auto& c : factories) {
-    LOG_("name {}, id {}, base_id {}", c.second.class_name, c.second.cls_id,
-         c.second.base_id);
+    AE_LOG_MACRO("name {}, id {}, base_id {}", c.second.class_name,
+                 c.second.cls_id, c.second.base_id);
   }
 #endif  // !NDEBUG
 }

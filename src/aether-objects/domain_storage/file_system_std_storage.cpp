@@ -36,8 +36,9 @@ class FstreamStorageWriter final : public IDomainStorageWriter {
 
   ~FstreamStorageWriter() override {
     file.close();
-    LOG_("Saved object id={}, class id={}, version={}, size={}", query.id,
-         query.class_id, static_cast<int>(query.version), written_size);
+    AE_LOG_MACRO("Saved object id={}, class id={}, version={}, size={}",
+                 query.id, query.class_id, static_cast<int>(query.version),
+                 written_size);
   }
 
   seri::SeriResult Write(seri::SizeWriteTag data) override {
@@ -123,10 +124,10 @@ ClassList FileSystemStdStorage::Enumerate(const ae::ObjId& obj_id) {
     auto file_name = class_dir.path().filename().string();
     classes.insert(static_cast<std::uint32_t>(std::stoul(file_name)));
   }
-  LOG_("Enumerated classes {}", classes);
+  AE_LOG_MACRO("Enumerated classes {}", classes);
 
   if (ec) {
-    LOG_("Unable to open directory with error {}", ec.message());
+    AE_LOG_MACRO("Unable to open directory with error {}", ec.message());
   }
 
   return ClassList{classes.begin(), classes.end()};
@@ -152,12 +153,12 @@ DomainLoad FileSystemStdStorage::Load(DomainQuery const& query) {
   auto version_data_path = class_dir / std::to_string(query.version);
   std::ifstream f(version_data_path, std::ios::in | std::ios::binary);
   if (!f.good()) {
-    LOG_("Unable to open file {}", version_data_path.string());
+    AE_LOG_MACRO("Unable to open file {}", version_data_path.string());
     return DomainLoad{DomainLoadResult::kEmpty, {}};
   }
 
-  LOG_("Loaded object id={}, class id={}, version={}", query.id, query.class_id,
-       static_cast<int>(query.version));
+  AE_LOG_MACRO("Loaded object id={}, class id={}, version={}", query.id,
+               query.class_id, static_cast<int>(query.version));
 
   return {DomainLoadResult::kLoaded,
           std::make_unique<FstreamStorageReader>(std::move(f))};
@@ -172,8 +173,8 @@ void FileSystemStdStorage::Remove(ae::ObjId const& obj_id) {
     return;
   }
   if (ec) {
-    LOG_("Unable to check if dir exists {} error {}", object_dir.string(),
-         ec.message());
+    AE_LOG_MACRO("Unable to check if dir exists {} error {}",
+                 object_dir.string(), ec.message());
     return;
   }
 
@@ -182,20 +183,20 @@ void FileSystemStdStorage::Remove(ae::ObjId const& obj_id) {
     auto ec2 = std::error_code{};
     std::filesystem::remove_all(class_dir.path(), ec2);
     if (ec2) {
-      LOG_("Unable to remove dir {}, error {}", class_dir.path().string(),
-           ec2.message());
+      AE_LOG_MACRO("Unable to remove dir {}, error {}",
+                   class_dir.path().string(), ec2.message());
       continue;
     }
-    LOG_("Object removed {}", obj_id);
+    AE_LOG_MACRO("Object removed {}", obj_id);
   }
   if (ec) {
-    LOG_("Unable to open directory with error {}", ec.message());
+    AE_LOG_MACRO("Unable to open directory with error {}", ec.message());
   }
 }
 
 void FileSystemStdStorage::CleanUp() {
   std::filesystem::remove_all("state");
-  LOG_("Removed all!", 0);
+  AE_LOG_MACRO("Removed all!", 0);
 }
 }  // namespace ae
 

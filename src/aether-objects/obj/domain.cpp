@@ -128,9 +128,9 @@ Factory* Domain::GetMostRelatedFactory(ObjId id) {
     class_names.emplace_back(registry_->ClassName(cid));
   }
 
-  LOG_("For obj {} enumerated classes [{}]", id.id(), class_names);
+  AE_LOG_MACRO("For obj {} enumerated classes [{}]", id.id(), class_names);
 #else
-  LOG_("For obj {} enumerated classes [{}]", id.id(), classes);
+  AE_LOG_MACRO("For obj {} enumerated classes [{}]", id.id(), classes);
 #endif
 
   // Remove all unsupported classes.

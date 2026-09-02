@@ -16,22 +16,28 @@
 #ifndef AETHER_OBJECTS_LOG_H_
 #define AETHER_OBJECTS_LOG_H_
 
+#ifdef AE_LOGGER_INCLUDE
+#  include AE_LOGGER_INCLUDE
+#endif
+
 // IWYU pragma: begin_exports
 #include <iostream>
 #include "aether-miscpp/format/format.h"
 // IWYU pragma: end_exports
 
-#ifndef AE_NO_DEBUG_LOG
-#  define AE_NO_DEBUG_LOG 0
+#ifndef AE_LOG_MACRO
+#  ifndef AE_NO_DEBUG_LOG
+#    define AE_NO_DEBUG_LOG 0
+#  endif
+#  if !defined NDEBUG && !AE_NO_DEBUG_LOG
+#    define AE_LOG_MACRO(FORMAT_STR, ...)                             \
+      do {                                                            \
+        ::ae::Format(std::cout, "OBJ_SYS:[{:time}]:" FORMAT_STR "\n", \
+                     std::chrono::system_clock::now() __VA_OPT__(, )  \
+                         __VA_ARGS__);                                \
+      } while (false)
+#  else
+#    define AE_LOG_MACRO(FORMAT_STR, ...)
+#  endif
 #endif
-
-#if !defined NDEBUG && !AE_NO_DEBUG_LOG
-#  define LOG_(FORMAT_STR, ...)                                            \
-    do {                                                                   \
-      ::ae::Format(std::cout, FORMAT_STR "\n" __VA_OPT__(, ) __VA_ARGS__); \
-    } while (false)
-#else
-#  define LOG_(FORMAT_STR, ...)
-#endif
-
 #endif  // AETHER_OBJECTS_LOG_H_
