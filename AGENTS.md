@@ -24,7 +24,7 @@ Public headers are installed from `src/aether-objects`, and the library target i
   lifetime contracts.
 - Keep serialization formats, object IDs, ownership and reference tracking,
   persistence behavior, and threading behavior compatible.
-- Use `LOG_` macros for local debug logging.
+- Use `AE_LOG_MACRO` macros for local debug logging.
 - Manage dependencies through CPM; do not vendor, edit, or copy dependency
   sources without explicit approval.
 
@@ -52,7 +52,7 @@ Preserve their serialized representation and error behavior.
 
 ### Logging (`log.h`)
 
-`LOG_` is the local debug logging boundary. It writes formatted messages in
+`AE_LOG_MACRO` is the local debug logging boundary. It writes formatted messages in
 debug builds unless `AE_NO_DEBUG_LOG` disables it, and compiles away in release
 builds. Preserve this behavior.
 
