@@ -42,7 +42,6 @@ CPMAddPackage(
   EXCLUDE_FROM_ALL FALSE
 )
 
-
 add_library(${PROJECT_NAME} STATIC)
 add_library(aether::objects ALIAS ${PROJECT_NAME})
 
@@ -66,6 +65,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC aether::miscpp)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  target_compile_options(${PROJECT_NAME} PUBLIC /Zc:preprocessor)
+endif()
 
 if(NOT "${AE_LOGGER_INCLUDE}" STREQUAL "")
   target_compile_definitions(${PROJECT_NAME} PUBLIC "AE_LOGGER_INCLUDE=${AE_LOGGER_INCLUDE}")
