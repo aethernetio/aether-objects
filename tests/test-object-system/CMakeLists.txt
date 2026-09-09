@@ -21,6 +21,7 @@ list(APPEND test_srcs
     test-obj-ptr-forward-decl.cpp
     test-update-objects.cpp
     test-version-iterator.cpp
+    test-ancestor-layers.cpp
     map_domain_storage.cpp
 )
 

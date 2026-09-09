@@ -23,6 +23,7 @@
 #include <set>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "aether-miscpp/domain_visitor/domain_visitor.h"
 #include "aether-miscpp/serialization/binary_archive.h"
@@ -126,6 +127,10 @@ class DomainGraph {
   DomainCycleDetector cycle_detector{};
 
  private:
+  // Load every known stored class layer, base → derived, into the already
+  // constructed object. Unknown platform layers stay filtered out.
+  void LoadStoredLayers(Ptr<Obj>& obj, ObjId storage_id);
+
   DomainLoad GetReader(DomainQuery const& query);
   std::unique_ptr<IDomainStorageWriter> GetWriter(DomainQuery const& query);
 };
@@ -149,6 +154,9 @@ class Domain {
   bool IsExisting(std::uint32_t class_id) const;
 
   Factory* FindClassFactory(std::uint32_t class_id);
+  // Known stored classes for id, sorted base → derived. Same filter and
+  // chain rules as GetMostRelatedFactory.
+  std::vector<std::uint32_t> KnownStoredClasses(ObjId id);
   Factory* GetMostRelatedFactory(ObjId id);
 
   IDomainStorage* storage_;

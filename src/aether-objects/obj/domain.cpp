@@ -41,7 +41,7 @@ Ptr<Obj> DomainGraph::LoadRoot(ObjId obj_id) {
   }
 
   auto ptr = domain->ConstructObj(*factory, obj_id);
-  factory->load(this, ptr, obj_id);
+  LoadStoredLayers(ptr, obj_id);
   return ptr;
 }
 
@@ -62,8 +62,19 @@ Ptr<Obj> DomainGraph::LoadCopyImpl(ObjId ref_id, ObjId copy_id) {
 
   auto ptr = domain->ConstructObj(*factory, copy_id);
   // load new object with ref_id
-  factory->load(this, ptr, ref_id);
+  LoadStoredLayers(ptr, ref_id);
   return ptr;
+}
+
+void DomainGraph::LoadStoredLayers(Ptr<Obj>& obj, ObjId storage_id) {
+  // Same known-class chain GetMostRelatedFactory already sorted base → derived.
+  // Each factory load reads only that class layer. A later derived load that
+  // walks AE_REF_BASE is skipped by cycle_detector, so a layer is applied once.
+  for (auto const class_id : domain->KnownStoredClasses(storage_id)) {
+    auto* layer = domain->FindClassFactory(class_id);
+    assert(layer && layer->load);
+    layer->load(this, obj, storage_id);
+  }
 }
 
 void DomainGraph::SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id) {
@@ -119,32 +130,18 @@ void Domain::AddObject(ObjId id, Ptr<Obj> const& obj) {
 
 void Domain::RemoveObject(Obj* ptr) { id_objects_.erase(ptr->obj_id.id()); }
 
-Factory* Domain::GetMostRelatedFactory(ObjId id) {
+std::vector<std::uint32_t> Domain::KnownStoredClasses(ObjId id) {
   auto classes = storage_->Enumerate(id);
-#ifndef NDEBUG
-  auto class_names = std::vector<std::string_view>{};
-  class_names.reserve(classes.size());
-  for (auto cid : classes) {
-    class_names.emplace_back(registry_->ClassName(cid));
-  }
-
-  AE_LOG_MACRO("For obj {} enumerated classes [{}]", id.id(), class_names);
-#else
-  AE_LOG_MACRO("For obj {} enumerated classes [{}]", id.id(), classes);
-#endif
-
   // Remove all unsupported classes.
   classes.erase(
       std::remove_if(std::begin(classes), std::end(classes),
                      [this](auto const& c) { return !IsExisting(c); }),
       std::end(classes));
-
   if (classes.empty()) {
-    return nullptr;
+    return {};
   }
 
-  // Build inheritance chain.
-  // from base to derived.
+  // Build inheritance chain, base to derived. Not storage/map order.
   std::sort(std::begin(classes), std::end(classes),
             [this](auto left, auto right) {
               if (registry_->GenerationDistance(right, left) > 0) {
@@ -157,6 +154,27 @@ Factory* Domain::GetMostRelatedFactory(ObjId id) {
               assert(false);
               return false;
             });
+  return classes;
+}
+
+Factory* Domain::GetMostRelatedFactory(ObjId id) {
+  auto const raw = storage_->Enumerate(id);
+#ifndef NDEBUG
+  auto class_names = std::vector<std::string_view>{};
+  class_names.reserve(raw.size());
+  for (auto cid : raw) {
+    class_names.emplace_back(registry_->ClassName(cid));
+  }
+
+  AE_LOG_MACRO("For obj {} enumerated classes [{}]", id.id(), class_names);
+#else
+  AE_LOG_MACRO("For obj {} enumerated classes [{}]", id.id(), raw);
+#endif
+
+  auto classes = KnownStoredClasses(id);
+  if (classes.empty()) {
+    return nullptr;
+  }
 
   // Find the Final class for the most derived class provided and create it.
   for (auto& f : registry_->factories) {
