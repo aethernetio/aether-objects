@@ -20,11 +20,13 @@ void setUp() {}
 void tearDown() {}
 
 extern int run_test_object_create();
+extern int run_test_env();
 extern int run_test_update_objects();
 extern int run_test_version_iterator();
 
 int main() {
   int res{};
+  res += run_test_env();
   res += run_test_object_create();
   res += run_test_version_iterator();
   res += run_test_update_objects();
