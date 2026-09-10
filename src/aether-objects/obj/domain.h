@@ -22,7 +22,6 @@
 #include <map>
 #include <set>
 #include <type_traits>
-#include <utility>
 
 #include "aether-miscpp/domain_visitor/domain_visitor.h"
 #include "aether-miscpp/serialization/binary_archive.h"
@@ -30,6 +29,7 @@
 
 #include "aether-objects/ptr/ptr_view.h"
 
+#include "aether-objects/env/env.h"
 #include "aether-objects/obj/idomain_storage.h"
 #include "aether-objects/obj/obj_id.h"
 #include "aether-objects/obj/registry.h"
@@ -135,6 +135,10 @@ class Domain {
 
  public:
   explicit Domain(IDomainStorage& storage);
+  Domain(IDomainStorage& storage, Env* env);
+
+  /// \brief Returns this domain's optional environment.
+  Env* get_env() const { return env_; }
 
   // Search for the object by obj_id.
   Ptr<Obj> Find(ObjId obj_id) const;
@@ -153,6 +157,7 @@ class Domain {
 
   IDomainStorage* storage_;
   Registry* registry_;
+  Env* env_{};
 
   std::map<ObjId::Type, PtrView<Obj>> id_objects_;
 };

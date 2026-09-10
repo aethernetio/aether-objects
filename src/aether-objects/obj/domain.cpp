@@ -87,8 +87,10 @@ std::unique_ptr<IDomainStorageWriter> DomainGraph::GetWriter(
   return writer;
 }
 
-Domain::Domain(IDomainStorage& storage)
-    : storage_{&storage}, registry_{&Registry::GetRegistry()} {}
+Domain::Domain(IDomainStorage& storage) : Domain(storage, nullptr) {}
+
+Domain::Domain(IDomainStorage& storage, Env* env)
+    : storage_{&storage}, registry_{&Registry::GetRegistry()}, env_{env} {}
 
 Ptr<Obj> Domain::ConstructObj(Factory const& factory, ObjId obj_id) {
   Ptr<Obj> o = factory.create();
