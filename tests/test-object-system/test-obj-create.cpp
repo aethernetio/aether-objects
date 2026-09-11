@@ -251,9 +251,9 @@ void TestProxyPtr(Domain& domain) {
 
 void test_createFoo() {
   // create objects
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
-  Domain domain2{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
+  Domain domain2{domain_storage};
   {
     Foo::ptr foo = Foo::ptr::Create(CreateWith{domain}.with_id(1));
 
@@ -264,8 +264,10 @@ void test_createFoo() {
     });
 
     foo.Save();
-    TEST_ASSERT(facility.map.find(foo.id().id()) != facility.map.end());
-    TEST_ASSERT(facility.map.find(foo->bar.id().id()) != facility.map.end());
+    TEST_ASSERT(domain_storage.map.find(foo.id().id()) !=
+                domain_storage.map.end());
+    TEST_ASSERT(domain_storage.map.find(foo->bar.id().id()) !=
+                domain_storage.map.end());
 
     // load object for already loaded list
     Foo::ptr foo2 = Foo::ptr::Declare(CreateWith{domain}.with_id(1));
@@ -291,8 +293,8 @@ void test_createFoo() {
 }
 
 void test_ObjPtrCachedOwnership() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   test_obj_create_internal::TestEmptyAndUnloadedPtrOwnership(domain);
   test_obj_create_internal::TestCachedPtrOwnership(domain);
@@ -300,16 +302,16 @@ void test_ObjPtrCachedOwnership() {
 }
 
 void test_ObjPtrTypedViewOwnership() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   test_obj_create_internal::TestEmptyAndUnloadedTypedViewOwnership(domain);
   test_obj_create_internal::TestLoadedTypedViewOwnership(domain);
 }
 
 void test_createBob() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   {
     Bob::ptr bob = Bob::ptr::Create(CreateWith{domain}.with_id(1));
@@ -341,8 +343,8 @@ void test_createBob() {
 }
 
 void test_cloneFoo() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
   auto foo_prefab = Foo::ptr::Create(CreateWith{domain}.with_id(100));
   TEST_ASSERT(foo_prefab);
   foo_prefab.Save();
@@ -363,8 +365,8 @@ void test_cloneFoo() {
 }
 
 void test_createBobsMother() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   {
     BobsMother::ptr bobs_mother =
@@ -387,8 +389,8 @@ void test_createBobsMother() {
 }
 
 void test_createBobsFather() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   {
     BobsFather::ptr bobs_father =
@@ -414,8 +416,8 @@ void test_createBobsFather() {
 }
 
 void test_createCollector() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
   {
     Collector::ptr collector =
         Collector::ptr::Create(CreateWith{domain}.with_id(1));
@@ -446,8 +448,8 @@ void test_createCollector() {
 }
 
 void test_cyclePoopaLoopa() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   Poopa::DeleteCount = 0;
   Loopa::DeleteCount = 0;
@@ -486,8 +488,8 @@ void test_cyclePoopaLoopa() {
 }
 
 void test_cyclePoopaLoopaReverse() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
 
   Poopa::DeleteCount = 0;
   Loopa::DeleteCount = 0;
@@ -521,16 +523,17 @@ void test_cyclePoopaLoopaReverse() {
 }
 
 void test_Family() {
-  auto facility = MapDomainStorage{};
-  Domain domain{facility};
+  auto domain_storage = MapDomainStorage{};
+  Domain domain{domain_storage};
   // create child and test is father and obj saved too
   {
     Child::ptr child = Child::ptr::Create(CreateWith{domain}.with_id(1));
     TEST_ASSERT(child);
     child.Save();
-    TEST_ASSERT(facility.map.find(child.id().id()) != facility.map.end());
+    TEST_ASSERT(domain_storage.map.find(child.id().id()) !=
+                domain_storage.map.end());
 
-    auto& classes = facility.map[child.id().id()];
+    auto& classes = domain_storage.map[child.id().id()];
     TEST_ASSERT(classes.find(Child::kClassId) != classes.end());
     TEST_ASSERT_EQUAL(0, classes[Child::kClassId][0]->size());
     TEST_ASSERT(classes.find(Father::kClassId) != classes.end());
