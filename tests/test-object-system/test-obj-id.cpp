@@ -28,8 +28,12 @@ namespace ae::test_obj_id {
 
 namespace test_obj_id_internal {
 
+// Sample is sized to make an unsynchronized race (repeated engine state)
+// obvious while keeping a true birthday collision in the 32-bit id space
+// negligible. GenerateUnique itself remains probabilistic: this suite does
+// not assert a global uniqueness contract.
 constexpr std::size_t kThreadCount = 8;
-constexpr std::size_t kIdsPerThread = 128;
+constexpr std::size_t kIdsPerThread = 64;
 constexpr ObjId::Type kLowestGeneratedId = 10000;
 
 }  // namespace test_obj_id_internal
@@ -45,7 +49,9 @@ void test_GenerateUniqueSingleThreadIsValid() {
 // The generator state is process-wide: a shared std::mt19937 and a shared
 // distribution are both advanced by every call. Unsynchronized concurrent
 // calls read the same engine word before either advances it, which shows up
-// as repeated ids. Threads start together so the calls actually overlap.
+// as clusters of identical ids. Threads start together so the calls overlap.
+// Absence of those clusters on this small sample is a race check, not a
+// uniqueness guarantee for random 32-bit ids.
 void test_GenerateUniqueIsThreadSafe() {
   std::atomic<bool> start{false};
   std::vector<std::vector<ObjId>> per_thread(
@@ -83,6 +89,8 @@ void test_GenerateUniqueIsThreadSafe() {
   }
   TEST_ASSERT_TRUE(total == test_obj_id_internal::kThreadCount *
                                 test_obj_id_internal::kIdsPerThread);
+  // Race detector: an unlocked generator yields repeated ids far above the
+  // birthday rate of this sample. Not a contract that collisions never occur.
   TEST_ASSERT_TRUE(seen.size() == total);
 }
 

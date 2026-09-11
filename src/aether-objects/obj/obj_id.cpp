@@ -32,6 +32,9 @@ ObjId ObjId::GenerateUnique() {
   static std::uniform_int_distribution<std::mt19937::result_type> dist6(
       10000, std::numeric_limits<Type>::max());
   std::lock_guard<std::mutex> lock{mutex};
+  // Probabilistic uniqueness in a 32-bit space: the mutex makes the engine
+  // advance correctly under concurrency; it does not turn the draw into a
+  // collision-free allocator.
   return ObjId{static_cast<ObjId::Type>(dist6(rng))};
 }
 }  // namespace ae
