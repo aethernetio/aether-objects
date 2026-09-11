@@ -18,6 +18,7 @@
 #define AETHER_OBJECTS_OBJ_REGISTRY_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -32,9 +33,10 @@ class DomainGraph;
 
 struct Factory {
   using CreateFunc = Ptr<Obj> (*)();
-  using LoadFunc = void (*)(DomainGraph* domain_graph, Ptr<Obj>& obj, ObjId id);
-  using SaveFunc = void (*)(DomainGraph* domain_graph, Ptr<Obj> const& obj,
-                            ObjId id);
+  using LoadFunc = std::optional<seri::SeriResult> (*)(
+      DomainGraph* domain_graph, Ptr<Obj>& obj, ObjId id);
+  using SaveFunc = std::optional<seri::SeriResult> (*)(
+      DomainGraph* domain_graph, Ptr<Obj> const& obj, ObjId id);
 
   CreateFunc create;
   LoadFunc load;

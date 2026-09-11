@@ -20,9 +20,9 @@
 #include <cassert>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <type_traits>
-#include <utility>
 
 #include "aether-miscpp/domain_visitor/domain_visitor.h"
 #include "aether-miscpp/serialization/binary_archive.h"
@@ -30,15 +30,24 @@
 
 #include "aether-objects/ptr/ptr_view.h"
 
+#include "aether-objects/env/env.h"
 #include "aether-objects/obj/idomain_storage.h"
 #include "aether-objects/obj/obj_id.h"
 #include "aether-objects/obj/registry.h"
 #include "aether-objects/obj/version_iterator.h"
 
 namespace ae {
+
+namespace domain_internal {
+inline constexpr seri::SeriError missing_version{
+    .error_code = 1000, .message = "Object version is missing"};
+}  // namespace domain_internal
+
 class Obj;
 class Domain;
 class DomainGraph;
+template <typename T>
+class Registrar;
 
 struct DomainCycleDetector {
   struct Node {
@@ -104,8 +113,9 @@ class DomainGraph {
 
   // Load saved state of object.
   Ptr<Obj> LoadRoot(ObjId obj_id);
+  seri::SeriResult LoadRoot(ObjId obj_id, Ptr<Obj>& ptr);
   // Save state of object.
-  void SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id);
+  seri::SeriResult SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id);
   // Load a copy of object
   template <typename T>
   Ptr<T> LoadCopy(ObjId ref_id, ObjId copy_id);
@@ -113,12 +123,12 @@ class DomainGraph {
   Ptr<Obj> LoadCopyImpl(ObjId ref_id, ObjId copy_id);
 
   template <typename T>
-  seri::SeriResult Load(T& obj, ObjId obj_id);
+  std::optional<seri::SeriResult> Load(T& obj, ObjId obj_id);
   template <typename T, auto V>
   seri::SeriResult LoadVersion(Version<V> version, T& obj, ObjId obj_id);
 
   template <typename T>
-  seri::SeriResult Save(T const& obj, ObjId obj_id);
+  std::optional<seri::SeriResult> Save(T const& obj, ObjId obj_id);
   template <typename T, auto V>
   seri::SeriResult SaveVersion(Version<V> version, T const& obj, ObjId obj_id);
 
@@ -130,11 +140,20 @@ class DomainGraph {
   std::unique_ptr<IDomainStorageWriter> GetWriter(DomainQuery const& query);
 };
 
+inline bool IsMissingVersion(seri::SeriResult const& result) {
+  return result.IsErr() && result.error().error_code ==
+                               domain_internal::missing_version.error_code;
+}
+
 class Domain {
   friend class DomainGraph;
 
  public:
   explicit Domain(IDomainStorage& storage);
+  Domain(IDomainStorage& storage, Env* env);
+
+  /// \brief Returns this domain's optional environment.
+  Env* get_env() const { return env_; }
 
   // Search for the object by obj_id.
   Ptr<Obj> Find(ObjId obj_id) const;
@@ -153,6 +172,7 @@ class Domain {
 
   IDomainStorage* storage_;
   Registry* registry_;
+  Env* env_{};
 
   std::map<ObjId::Type, PtrView<Obj>> id_objects_;
 };
@@ -163,19 +183,24 @@ Ptr<T> DomainGraph::LoadCopy(ObjId ref_id, ObjId copy_id) {
 }
 
 template <typename T>
-seri::SeriResult DomainGraph::Load(T& obj, ObjId obj_id) {
+std::optional<seri::SeriResult> DomainGraph::Load(T& obj, ObjId obj_id) {
   if (!cycle_detector.Add(T::kClassId, obj_id)) {
-    return Ok{seri::good};
+    return std::nullopt;
   }
 
   if constexpr (HasAnyVersionedLoad<T>::value) {
-    auto result = seri::SeriResult{Ok{seri::good}};
+    auto result = seri::SeriResult{Error{domain_internal::missing_version}};
+    auto is_missing = true;
     version_iterator<VersionLoadTrait>(
-        obj, [this, obj_id, &result](auto version, auto& obj) {
-          if (result.IsErr()) {
+        obj, [this, obj_id, &result, &is_missing](auto version, auto& obj) {
+          if (!is_missing && result.IsErr()) {
             return;
           }
-          result = this->LoadVersion(version, obj, obj_id);
+          auto version_result = this->LoadVersion(version, obj, obj_id);
+          is_missing = IsMissingVersion(version_result);
+          if (!is_missing) {
+            result = version_result;
+          }
         });
     return result;
   } else {
@@ -198,8 +223,11 @@ template <typename T, auto V>
 seri::SeriResult DomainGraph::LoadVersion(Version<V> version, T& obj,
                                           ObjId obj_id) {
   auto load = GetReader({obj_id, T::kClassId, V});
-  if (load.result != DomainLoadResult::kLoaded) {
-    return Ok{seri::good};
+  if (load.result == DomainLoadResult::kEmpty) {
+    return Error{domain_internal::missing_version};
+  }
+  if (load.result != DomainLoadResult::kLoaded || load.reader == nullptr) {
+    return Error{seri::read_error};
   }
 
   auto bin_archive =
@@ -222,9 +250,9 @@ seri::SeriResult DomainGraph::LoadVersion(Version<V> version, T& obj,
 }
 
 template <typename T>
-seri::SeriResult DomainGraph::Save(T const& obj, ObjId obj_id) {
+std::optional<seri::SeriResult> DomainGraph::Save(T const& obj, ObjId obj_id) {
   if (!cycle_detector.Add(T::kClassId, obj_id)) {
-    return Ok{seri::good};
+    return std::nullopt;
   }
 
   if constexpr (HasAnyVersionedSave<T>::value) {
@@ -285,11 +313,15 @@ struct Serializer<BinaryArchive<DomainBuffer>, T> {
   using Archive = BinaryArchive<DomainBuffer>;
 
   SeriResult Seri(Archive& arch, Meta<T const> meta_val) const {
-    return arch.buffer().domain_graph->Save(meta_val.value, arch.buffer().id);
+    auto result =
+        arch.buffer().domain_graph->Save(meta_val.value, arch.buffer().id);
+    return result.value_or(Ok{good});
   }
 
   SeriResult Deseri(Archive& arch, Meta<T> meta_val) const {
-    return arch.buffer().domain_graph->Load(meta_val.value, arch.buffer().id);
+    auto result =
+        arch.buffer().domain_graph->Load(meta_val.value, arch.buffer().id);
+    return result.value_or(Ok{good});
   }
 };
 

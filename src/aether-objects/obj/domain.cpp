@@ -27,22 +27,34 @@ namespace ae {
 DomainGraph::DomainGraph(Domain* domain) : domain(domain) { assert(domain); }
 
 Ptr<Obj> DomainGraph::LoadRoot(ObjId obj_id) {
-  if (!obj_id.is_valid()) {
+  Ptr<Obj> ptr;
+  if (LoadRoot(obj_id, ptr).IsErr()) {
     return {};
   }
+  return ptr;
+}
+
+seri::SeriResult DomainGraph::LoadRoot(ObjId obj_id, Ptr<Obj>& ptr) {
+  if (!obj_id.is_valid()) {
+    return Error{seri::read_error};
+  }
   // if already loaded
-  if (auto obj = domain->Find(obj_id); obj) {
-    return obj;
+  if (ptr = domain->Find(obj_id); ptr) {
+    return Ok{seri::good};
   }
 
   auto* factory = domain->GetMostRelatedFactory(obj_id);
   if (factory == nullptr) {
-    return {};
+    return Error{seri::read_error};
   }
 
-  auto ptr = domain->ConstructObj(*factory, obj_id);
-  factory->load(this, ptr, obj_id);
-  return ptr;
+  ptr = domain->ConstructObj(*factory, obj_id);
+  auto result = factory->load(this, ptr, obj_id);
+  if (result && result->IsErr()) {
+    domain->RemoveObject(ptr.get());
+    ptr.Reset();
+  }
+  return result.value_or(Ok{seri::good});
 }
 
 Ptr<Obj> DomainGraph::LoadCopyImpl(ObjId ref_id, ObjId copy_id) {
@@ -62,18 +74,24 @@ Ptr<Obj> DomainGraph::LoadCopyImpl(ObjId ref_id, ObjId copy_id) {
 
   auto ptr = domain->ConstructObj(*factory, copy_id);
   // load new object with ref_id
-  factory->load(this, ptr, ref_id);
+  auto result = factory->load(this, ptr, ref_id);
+  if (result && result->IsErr()) {
+    domain->RemoveObject(ptr.get());
+    return {};
+  }
   return ptr;
 }
 
-void DomainGraph::SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id) {
+seri::SeriResult DomainGraph::SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id) {
   if (!ptr) {
-    return;
+    return Error{seri::write_error};
   }
   if (auto* factory = domain->FindClassFactory(ptr->GetClassId());
       factory != nullptr) {
-    factory->save(this, ptr, obj_id);
+    auto result = factory->save(this, ptr, obj_id);
+    return result.value_or(Ok{seri::good});
   }
+  return Error{seri::write_error};
 }
 
 DomainLoad DomainGraph::GetReader(DomainQuery const& query) {
@@ -87,8 +105,10 @@ std::unique_ptr<IDomainStorageWriter> DomainGraph::GetWriter(
   return writer;
 }
 
-Domain::Domain(IDomainStorage& storage)
-    : storage_{&storage}, registry_{&Registry::GetRegistry()} {}
+Domain::Domain(IDomainStorage& storage) : Domain(storage, nullptr) {}
+
+Domain::Domain(IDomainStorage& storage, Env* env)
+    : storage_{&storage}, registry_{&Registry::GetRegistry()}, env_{env} {}
 
 Ptr<Obj> Domain::ConstructObj(Factory const& factory, ObjId obj_id) {
   Ptr<Obj> o = factory.create();

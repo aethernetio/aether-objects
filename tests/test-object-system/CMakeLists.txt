@@ -17,6 +17,8 @@ cmake_minimum_required( VERSION 3.16 )
 
 list(APPEND test_srcs
     main.cpp
+    test-env.cpp
+    test-lifecycle.cpp
     test-obj-create.cpp
     test-obj-ptr-forward-decl.cpp
     test-update-objects.cpp

@@ -131,7 +131,8 @@ SeriResult ObjPtrBaseSerializer::Seri(Archive& archive,
   TRY_RESULT((archive.buffer().Write(DataTag{meta.value.id_})));
   TRY_RESULT((archive.buffer().Write(DataTag{meta.value.flags_})));
   if (meta.value.cached_) {
-    archive.buffer().domain_graph->SaveRoot(meta.value.cached_, meta.value.id_);
+    TRY_RESULT(archive.buffer().domain_graph->SaveRoot(meta.value.cached_,
+                                                       meta.value.id_));
   }
   return Ok{seri::good};
 }
@@ -145,8 +146,8 @@ SeriResult ObjPtrBaseSerializer::Deseri(Archive& archive,
   if (meta.value.is_valid() &&
       (meta.value.flags_ & ObjFlags::kUnloadedByDefault) == 0 &&
       (meta.value.flags_ & ObjFlags::kUnloaded) == 0) {
-    meta.value.cached_ =
-        archive.buffer().domain_graph->LoadRoot(meta.value.id_);
+    TRY_RESULT(archive.buffer().domain_graph->LoadRoot(meta.value.id_,
+                                                       meta.value.cached_));
   }
   return Ok{seri::good};
 }
