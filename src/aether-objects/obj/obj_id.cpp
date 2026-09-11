@@ -17,14 +17,21 @@
 #include "aether-objects/obj/obj_id.h"
 
 #include <limits>
+#include <mutex>
 #include <random>
 
 namespace ae {
 ObjId ObjId::GenerateUnique() {
+  // One process-wide identity source shared by every Domain. Applications may
+  // create objects from several threads, so the engine and the distribution
+  // state must be advanced under a lock: std::mt19937 and
+  // std::uniform_int_distribution are both mutated by operator().
+  static std::mutex mutex;
   static std::random_device dev;
   static std::mt19937 rng(dev());
   static std::uniform_int_distribution<std::mt19937::result_type> dist6(
       10000, std::numeric_limits<Type>::max());
+  std::lock_guard<std::mutex> lock{mutex};
   return ObjId{static_cast<ObjId::Type>(dist6(rng))};
 }
 }  // namespace ae

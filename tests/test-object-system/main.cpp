@@ -20,6 +20,7 @@ void setUp() {}
 void tearDown() {}
 
 extern int run_test_object_create();
+extern int run_test_obj_id();
 extern int run_test_update_objects();
 extern int run_test_version_iterator();
 extern int run_test_ancestor_layers();
@@ -27,6 +28,7 @@ extern int run_test_ancestor_layers();
 int main() {
   int res{};
   res += run_test_object_create();
+  res += run_test_obj_id();
   res += run_test_version_iterator();
   res += run_test_update_objects();
   res += run_test_ancestor_layers();

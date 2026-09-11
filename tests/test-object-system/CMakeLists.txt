@@ -18,6 +18,7 @@ cmake_minimum_required( VERSION 3.16 )
 list(APPEND test_srcs
     main.cpp
     test-obj-create.cpp
+    test-obj-id.cpp
     test-obj-ptr-forward-decl.cpp
     test-update-objects.cpp
     test-version-iterator.cpp
