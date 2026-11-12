@@ -47,7 +47,7 @@ if(AE_OBJECTS_RAW_TELE)
   CPMAddPackage(
     NAME aether-tele
     GIT_REPOSITORY "https://github.com/aethernetio/aether-tele.git"
-    GIT_TAG "369082f885e467f87a971991daa3277e87f196a2"
+    GIT_TAG "7d14cd3cb8261ca78fe88c7e1370ff9ae3060e52"
     OPTIONS "AE_TELE_INSTALL ${AE_INSTALL}" "AE_TELE_BUILD_TESTS OFF"
     EXCLUDE_FROM_ALL FALSE
   )
