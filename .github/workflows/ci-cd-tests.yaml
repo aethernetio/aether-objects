@@ -39,6 +39,13 @@ jobs:
               cmake_args: '-G "Visual Studio 18 2026" -A Win32',
             }
           - {
+              name: "Windows MSVC x64 size/LTCG",
+              os: windows-latest,
+              shell: "powershell",
+              cmake_args: '-G "Visual Studio 18 2026" -A x64 -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON "-DCMAKE_CXX_FLAGS_RELEASE=/O1 /DNDEBUG /fp:fast /Gy /Gw"',
+              jobs_count: 4,
+            }
+          - {
               name: "Windows MinGW",
               os: windows-latest,
               shell: "msys2",
