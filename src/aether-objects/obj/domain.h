@@ -303,7 +303,8 @@ seri::SeriResult DomainGraph::SaveVersion(Version<V> version, T const& obj,
         obj, save_visitor,
         domain_visitor::PolicyConst<domain_visitor::VisitPolicy::kShallow>{});
   }
-  return save_visitor.res;
+  if (save_visitor.res.IsErr()) return save_visitor.res;
+  return storage_writer->Commit();
 }
 
 namespace seri {

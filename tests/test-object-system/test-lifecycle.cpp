@@ -60,6 +60,42 @@ class FailingNestedSaveStorage final : public MapDomainStorage {
   }
 };
 
+class FailingCommitWriter final : public IDomainStorageWriter {
+ public:
+  explicit FailingCommitWriter(unsigned& commits) : commits_{commits} {}
+  seri::SeriResult Write(seri::SizeWriteTag) override { return Ok{seri::good}; }
+  seri::SeriResult Write(seri::DataWriteTag) override { return Ok{seri::good}; }
+  seri::SeriResult Commit() override {
+    ++commits_;
+    return Error{seri::write_error};
+  }
+
+ private:
+  unsigned& commits_;
+};
+class FailingCommitStorage final : public MapDomainStorage {
+ public:
+  unsigned commits{};
+  std::unique_ptr<IDomainStorageWriter> Store(DomainQuery const&) override {
+    return std::make_unique<FailingCommitWriter>(commits);
+  }
+};
+void test_CommitFailurePropagatesWithoutSavedCallback() {
+  FailingCommitStorage storage;
+  Domain domain{storage};
+  auto object = LifecycleObject::ptr::Create(CreateWith{domain}.with_id(1));
+  LifecycleObject::ResetCallbacks();
+  object.Save();
+  TEST_ASSERT_EQUAL_UINT(1, storage.commits);
+  TEST_ASSERT_EQUAL_INT(0, LifecycleObject::saved_count);
+  DomainGraph graph{&domain};
+  auto result = graph.Save(*object, ObjId{1});
+  TEST_ASSERT_TRUE(result.has_value());
+  TEST_ASSERT_TRUE(result->IsErr());
+  TEST_ASSERT_EQUAL_UINT(2, storage.commits);
+  TEST_ASSERT_EQUAL_INT(0, LifecycleObject::saved_count);
+}
+
 // Verifies successful saves and loads notify lifecycle callbacks immediately.
 void test_SuccessfulCallbacksAreSynchronous() {
   auto domain_storage = MapDomainStorage{};
@@ -324,6 +360,8 @@ void test_NoexceptAndOverloadedCallbacksAreNotified() {
 
 int test_lifecycle() {
   UNITY_BEGIN();
+  RUN_TEST(
+      ae::test_lifecycle::test_CommitFailurePropagatesWithoutSavedCallback);
   RUN_TEST(ae::test_lifecycle::test_SuccessfulCallbacksAreSynchronous);
   RUN_TEST(ae::test_lifecycle::test_FailedOperationsDoNotNotify);
   RUN_TEST(ae::test_lifecycle::test_AbsentOrRemovedDataDoesNotNotify);

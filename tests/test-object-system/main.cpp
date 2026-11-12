@@ -22,6 +22,7 @@ void tearDown() {}
 extern int run_test_object_create();
 extern int run_test_env();
 extern int test_lifecycle();
+extern int test_atomic_storage();
 extern int test_update_objects();
 extern int run_test_version_iterator();
 
@@ -29,6 +30,7 @@ int main() {
   int res{};
   res += run_test_env();
   res += test_lifecycle();
+  res += test_atomic_storage();
   res += run_test_object_create();
   res += run_test_version_iterator();
   res += test_update_objects();

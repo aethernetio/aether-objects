@@ -31,16 +31,27 @@ option(AE_BUILD_TESTS "Build tests" ${IS_ROOT_PROJECT} )
 option(AE_INSTALL "Install aether-objects library" ${IS_ROOT_PROJECT} )
 option(AE_NO_DEBUG_LOG "Do not print debug logs" !${IS_ROOT_PROJECT} )
 set(AE_LOGGER_INCLUDE "" CACHE STRING "Custom header for logger")
+option(AE_OBJECTS_RAW_TELE "Record object debug logs in an independent raw telemetry space" OFF)
 
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
   NAME aether-miscpp
   GIT_REPOSITORY "https://github.com/aethernetio/aether-miscpp.git"
-  GIT_TAG "main"
+  GIT_TAG "6839624442621a5b060ae610e91f480278ebaf6e"
   OPTIONS "AE_INSTALL ${AE_INSTALL}" "AE_BUILD_TESTS ${AE_BUILD_TESTS}"
   EXCLUDE_FROM_ALL FALSE
 )
+
+if(AE_OBJECTS_RAW_TELE)
+  CPMAddPackage(
+    NAME aether-tele
+    GIT_REPOSITORY "https://github.com/aethernetio/aether-tele.git"
+    GIT_TAG "a496a19599d01a5525dd115933cf01202bb018e0"
+    OPTIONS "AE_TELE_INSTALL ${AE_INSTALL}" "AE_TELE_BUILD_TESTS OFF"
+    EXCLUDE_FROM_ALL FALSE
+  )
+endif()
 
 add_library(${PROJECT_NAME} STATIC)
 add_library(aether::objects ALIAS ${PROJECT_NAME})
@@ -65,6 +76,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC aether::miscpp)
+if(AE_OBJECTS_RAW_TELE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC aether::tele)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC AE_OBJECTS_RAW_TELE=1
+    $<$<CONFIG:Debug>:AE_TELE_RAW_DEBUG=1>)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_compile_options(${PROJECT_NAME} PUBLIC /Zc:preprocessor)

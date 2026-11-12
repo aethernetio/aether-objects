@@ -26,6 +26,7 @@
 // IWYU pragma: end_exports
 
 #ifndef AE_LOG_MACRO
+#  define AE_OBJECTS_DEFAULT_LOGGER 1
 #  ifndef AE_NO_DEBUG_LOG
 #    define AE_NO_DEBUG_LOG 0
 #  endif
@@ -40,4 +41,22 @@
 #    define AE_LOG_MACRO(FORMAT_STR, ...)
 #  endif
 #endif
+// An explicit tag gives every object-system callsite its own stable index.
+// Custom AE_LOG_MACRO overrides keep control of logging through the old hook.
+#if defined(AE_OBJECTS_RAW_TELE) && AE_OBJECTS_RAW_TELE && \
+    defined(AE_OBJECTS_DEFAULT_LOGGER)
+#  include "aether-objects/telemetry.h"
+#  include "aether-tele/defines.h"
+#  if !defined NDEBUG && !AE_NO_DEBUG_LOG
+#    define AE_LOG_MACRO_TAGGED(TAG, FORMAT_STR, ...)           \
+      AE_TELE_DEBUG_TO(::ae::objects_tele::ObjectTeleSink, TAG, \
+                       FORMAT_STR __VA_OPT__(, ) __VA_ARGS__)
+#  else
+#    define AE_LOG_MACRO_TAGGED(TAG, FORMAT_STR, ...)
+#  endif
+#else
+#  define AE_LOG_MACRO_TAGGED(TAG, FORMAT_STR, ...) \
+    AE_LOG_MACRO(FORMAT_STR __VA_OPT__(, ) __VA_ARGS__)
+#endif
+
 #endif  // AETHER_OBJECTS_LOG_H_
