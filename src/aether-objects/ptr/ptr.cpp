@@ -128,13 +128,11 @@ std::uint16_t PtrBase::DecrementGraphCount() {
     return 1;
   }
 
-  bool safe_to_delete = true;
-  self_node.ForEach([&safe_to_delete](RefTree::Node& node) {
+  auto const safe_to_delete = self_node.ForEach([](RefTree::Node& node) {
     // that node has external references
     // check if head is not reachable
     if (node.value.ref_count != node.value.reachable_ref_count) {
       if (node.IsReachable(0)) {
-        safe_to_delete = false;
         return false;
       }
     }
