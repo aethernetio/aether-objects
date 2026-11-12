@@ -28,3 +28,13 @@ CPMAddPackage("https://github.com/ThrowTheSwitch/Unity.git#master")
 
 add_subdirectory(test-ptr)
 add_subdirectory(test-object-system)
+
+
+if(AE_OBJECTS_RAW_TELE)
+  foreach(mode debug disabled custom)
+    add_executable(test-object-telemetry-${mode} test-telemetry/main.cpp)
+    target_link_libraries(test-object-telemetry-${mode} PRIVATE aether::objects unity)
+    target_compile_definitions(test-object-telemetry-${mode} PRIVATE AE_OBJECTS_TEST_${mode}=1 AE_TELE_RAW_DEBUG=1)
+    add_test(NAME test-object-telemetry-${mode} COMMAND test-object-telemetry-${mode})
+  endforeach()
+endif()

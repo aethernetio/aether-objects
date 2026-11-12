@@ -91,7 +91,8 @@ std::unique_ptr<IDomainStorageWriter> RamDomainStorage::Store(
 ClassList RamDomainStorage::Enumerate(ObjId const& obj_id) {
   auto obj_map_it = state.find(obj_id);
   if (obj_map_it == std::end(state)) {
-    AE_LOG_MACRO("Obj not found {}", obj_id);
+    AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamNotFound, "Obj not found {}",
+                        obj_id);
     return {};
   }
   if (!obj_map_it->second) {
@@ -103,15 +104,18 @@ ClassList RamDomainStorage::Enumerate(ObjId const& obj_id) {
   for (auto& [cls, _] : *obj_map_it->second) {
     classes.emplace_back(cls);
   }
-  AE_LOG_MACRO("Enumerated for obj {} classes {}", obj_id, classes);
+  AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamEnumerated,
+                      "Enumerated for obj {} classes {}", obj_id, classes);
   return classes;
 }
 
 DomainLoad RamDomainStorage::Load(DomainQuery const& query) {
   auto obj_map_it = state.find(query.id);
   if (obj_map_it == std::end(state)) {
-    AE_LOG_MACRO("Unable to find object id={}, class id={}, version={}",
-                 query.id, query.class_id, static_cast<int>(query.version));
+    AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamObjectMissing,
+                        "Unable to find object id={}, class id={}, version={}",
+                        query.id, query.class_id,
+                        static_cast<int>(query.version));
     return {DomainLoadResult::kEmpty, {}};
   }
   if (!obj_map_it->second) {
@@ -120,20 +124,25 @@ DomainLoad RamDomainStorage::Load(DomainQuery const& query) {
 
   auto class_map_it = obj_map_it->second->find(query.class_id);
   if (class_map_it == std::end(*obj_map_it->second)) {
-    AE_LOG_MACRO("Unable to find object id={}, class id={}, version={}",
-                 query.id, query.class_id, static_cast<int>(query.version));
+    AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamClassMissing,
+                        "Unable to find object id={}, class id={}, version={}",
+                        query.id, query.class_id,
+                        static_cast<int>(query.version));
     return {DomainLoadResult::kEmpty, {}};
   }
   auto version_it = class_map_it->second.find(query.version);
   if (version_it == std::end(class_map_it->second)) {
-    AE_LOG_MACRO("Unable to find object id={}, class id={}, version={}",
-                 query.id, query.class_id, static_cast<int>(query.version));
+    AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamVersionMissing,
+                        "Unable to find object id={}, class id={}, version={}",
+                        query.id, query.class_id,
+                        static_cast<int>(query.version));
     return {DomainLoadResult::kEmpty, {}};
   }
 
-  AE_LOG_MACRO("Loaded object id={}, class id={}, version={}, size={}",
-               query.id, query.class_id, static_cast<int>(query.version),
-               version_it->second.size());
+  AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamLoaded,
+                      "Loaded object id={}, class id={}, version={}, size={}",
+                      query.id, query.class_id, static_cast<int>(query.version),
+                      version_it->second.size());
 
   return {DomainLoadResult::kLoaded,
           std::make_unique<RamDomainStorageReader>(version_it->second, *this)};
@@ -147,7 +156,8 @@ void RamDomainStorage::Remove(ObjId const& obj_id) {
   }
 
   obj_map_it->second.reset();
-  AE_LOG_MACRO("Removed object {}", obj_id);
+  AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamRemoved, "Removed object {}",
+                      obj_id);
 }
 
 void RamDomainStorage::CleanUp() { state.clear(); }
@@ -159,8 +169,10 @@ void RamDomainStorage::SaveData(DomainQuery const& query, ObjectData&& data) {
   }
   auto& saved = (*objcect_classes)[query.class_id][query.version];
   saved = std::move(data);
-  AE_LOG_MACRO("Saved object id={}, class id={}, version={}, size={}", query.id,
-               query.class_id, std::to_string(query.version), saved.size());
+  AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamSaved,
+                      "Saved object id={}, class id={}, version={}, size={}",
+                      query.id, query.class_id, std::to_string(query.version),
+                      saved.size());
 }
 
 }  // namespace ae

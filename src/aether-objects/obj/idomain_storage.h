@@ -49,6 +49,9 @@ class IDomainStorageWriter {
 
   virtual seri::SeriResult Write(seri::SizeWriteTag data) = 0;
   virtual seri::SeriResult Write(seri::DataWriteTag data) = 0;
+  // Publish a completely serialized version. Existing in-memory/custom writers
+  // retain their historical behavior unless they opt into transactional commit.
+  virtual seri::SeriResult Commit() { return Ok{seri::good}; }
 };
 
 // BinaryBuffer implementation for storage reader
