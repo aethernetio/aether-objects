@@ -67,7 +67,9 @@ class Registrar {
                                               Ptr<Obj>& obj, ObjId obj_id) {
     auto* self_ptr = static_cast<T*>(obj.get());
     auto result = domain_graph->Load(*self_ptr, obj_id);
-    if (result && result->IsOk()) {
+    // Stored base layers load separately. Notify only the actual object type;
+    // its callback retains responsibility for explicit base chaining.
+    if (result && result->IsOk() && self_ptr->GetClassId() == T::kClassId) {
       if constexpr (requires { self_ptr->Loaded(); }) {
         self_ptr->Loaded();
       }
