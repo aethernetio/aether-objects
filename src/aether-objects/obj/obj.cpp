@@ -39,16 +39,17 @@ void RegisterObjLayerFactory(Registry& registry) {
   if (registry.IsExisting(Obj::kClassId)) {
     return;
   }
-  registry.RegisterClass(
-      Obj::kClassId, Obj::kClassId,
-      Factory{ObjLayerFactoryCreateMustNotRun, LoadObjLayer,
-              SaveObjLayerUnused,
+  registry.RegisterClass(Obj::kClassId, Obj::kClassId,
+                         Factory{
+                             ObjLayerFactoryCreateMustNotRun,
+                             LoadObjLayer,
+                             SaveObjLayerUnused,
 #ifndef NDEBUG
-              std::string{"ae::Obj"},
-              Obj::kClassId,
-              Obj::kClassId,
+                             std::string{"ae::Obj"},
+                             Obj::kClassId,
+                             Obj::kClassId,
 #endif
-      });
+                         });
 }
 
 Obj::Obj() = default;
@@ -67,12 +68,11 @@ uint32_t Obj::GetClassId() const { return kClassId; }
 
 void Obj::SetOriginId(ObjId origin_id) {
   if (!origin_id.is_valid() || domain == nullptr) {
-    origin_.Reset();
+    origin_ = {};
     return;
   }
-  origin_ = Obj::ptr::Declare(
-      CreateWith{domain}.with_id(origin_id).with_flags(
-          ObjFlags::kUnloadedByDefault | ObjFlags::kUnloaded));
+  origin_ = Obj::ptr::Declare(CreateWith{domain}.with_id(origin_id).with_flags(
+      ObjFlags::kUnloadedByDefault | ObjFlags::kUnloaded));
 }
 
 ObjId Obj::origin_id() const { return origin_.id(); }

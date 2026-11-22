@@ -395,6 +395,15 @@ void test_LegacyEmptyBasePreservesBusinessStateInRam() {
   RamDomainStorage storage;
   TEST_ASSERT_TRUE(VerifyLegacyEmptyBase(storage));
 }
+void test_ClearingOriginRemovesTheStoredIdentity() {
+  RamDomainStorage storage;
+  Domain domain{storage};
+  auto object = LifecycleObject::ptr::Create(CreateWith{domain}.with_id(902));
+  object->SetOriginId(ObjId{999});
+  TEST_ASSERT_TRUE(object->origin_id() == ObjId{999});
+  object->SetOriginId(ObjId{});
+  TEST_ASSERT_FALSE(object->origin_id().is_valid());
+}
 #if AE_FILE_SYSTEM_STD_ENABLED
 void test_LegacyEmptyBasePreservesBusinessStateOnDisk() {
   auto previous = std::filesystem::current_path();
@@ -434,6 +443,7 @@ int test_lifecycle() {
       ae::test_lifecycle::test_NestedLoadFailurePropagatesAndDoesNotNotify);
   RUN_TEST(ae::test_lifecycle::test_NoexceptAndOverloadedCallbacksAreNotified);
   RUN_TEST(ae::test_lifecycle::test_LegacyEmptyBasePreservesBusinessStateInRam);
+  RUN_TEST(ae::test_lifecycle::test_ClearingOriginRemovesTheStoredIdentity);
 #if AE_FILE_SYSTEM_STD_ENABLED
   RUN_TEST(
       ae::test_lifecycle::test_LegacyEmptyBasePreservesBusinessStateOnDisk);
