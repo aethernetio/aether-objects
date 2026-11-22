@@ -109,6 +109,22 @@ ClassList RamDomainStorage::Enumerate(ObjId const& obj_id) {
   return classes;
 }
 
+bool RamDomainStorage::HasVersionAfter(DomainQuery const& query) {
+  if (query.version == 255U) {
+    return false;
+  }
+  auto const object = state.find(query.id);
+  if (object == state.end()) {
+    return false;
+  }
+  if (!object->second) {
+    return true;
+  }
+  auto const layer = object->second->find(query.class_id);
+  return layer != object->second->end() &&
+         layer->second.upper_bound(query.version) != layer->second.end();
+}
+
 DomainLoad RamDomainStorage::Load(DomainQuery const& query) {
   auto obj_map_it = state.find(query.id);
   if (obj_map_it == std::end(state)) {
@@ -149,6 +165,7 @@ DomainLoad RamDomainStorage::Load(DomainQuery const& query) {
 }
 
 void RamDomainStorage::Remove(ObjId const& obj_id) {
+  object_scopes.erase(obj_id);
   auto obj_map_it = state.find(obj_id);
   if (obj_map_it == std::end(state)) {
     state.emplace(obj_id, std::nullopt);
@@ -160,16 +177,20 @@ void RamDomainStorage::Remove(ObjId const& obj_id) {
                       obj_id);
 }
 
-void RamDomainStorage::CleanUp() { state.clear(); }
+void RamDomainStorage::CleanUp() {
+  state.clear();
+  object_scopes.clear();
+}
 
 void RamDomainStorage::SaveData(DomainQuery const& query, ObjectData&& data) {
+  if (query.object_scope) object_scopes[query.id] = *query.object_scope;
   auto& objcect_classes = state[query.id];
   if (!objcect_classes) {
     objcect_classes.emplace();
   }
   auto& saved = (*objcect_classes)[query.class_id][query.version];
   saved = std::move(data);
-  AE_LOG_MACRO_TAGGED(::ae::objects_tele::kRamSaved,
+  AE_LOG_COUNT_TAGGED(::ae::objects_tele::kRamSaved,
                       "Saved object id={}, class id={}, version={}, size={}",
                       query.id, query.class_id, std::to_string(query.version),
                       saved.size());

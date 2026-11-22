@@ -51,11 +51,23 @@
 #    define AE_LOG_MACRO_TAGGED(TAG, FORMAT_STR, ...)           \
       AE_TELE_DEBUG_TO(::ae::objects_tele::ObjectTeleSink, TAG, \
                        FORMAT_STR __VA_OPT__(, ) __VA_ARGS__)
+// Successful per-class saves are frequent. Count them without formatting or
+// allocating a log payload; errors still use the ordinary tagged log path.
+#    define AE_LOG_COUNT_TAGGED(TAG, FORMAT_STR, ...)                        \
+      [[maybe_unused]] auto AETE_UNIQUE_NAME(OBJECT_COUNT_) =                \
+          ::ae::tele::Tele<::ae::objects_tele::ObjectTeleSink,               \
+                           ::ae::objects_tele::kCountOnlyConfig> {           \
+        ::ae::objects_tele::ObjectTeleSink::Instance(), TAG,                 \
+            ::ae::tele::Level{::ae::tele::Level::kDebug}, __FILE__, __LINE__ \
+      }
 #  else
 #    define AE_LOG_MACRO_TAGGED(TAG, FORMAT_STR, ...)
+#    define AE_LOG_COUNT_TAGGED(TAG, FORMAT_STR, ...)
 #  endif
 #else
 #  define AE_LOG_MACRO_TAGGED(TAG, FORMAT_STR, ...) \
+    AE_LOG_MACRO(FORMAT_STR __VA_OPT__(, ) __VA_ARGS__)
+#  define AE_LOG_COUNT_TAGGED(TAG, FORMAT_STR, ...) \
     AE_LOG_MACRO(FORMAT_STR __VA_OPT__(, ) __VA_ARGS__)
 #endif
 

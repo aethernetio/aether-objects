@@ -18,8 +18,8 @@
 
 #include <utility>
 
-#include "aether-objects/obj/domain.h"
 #include "aether-objects/obj/obj.h"
+#include "aether-objects/obj/domain.h"
 #include "aether-objects/obj/obj_id.h"
 
 namespace ae {
@@ -50,9 +50,19 @@ ObjectPtrBase::ObjectPtrBase(ObjectPtrBase&& ptr) noexcept
 
 ObjectPtrBase::~ObjectPtrBase() = default;
 
-ObjId ObjectPtrBase::id() const { return id_; }
+ObjId ObjectPtrBase::id() const {
+  if (cached_) {
+    return cached_->obj_id;
+  }
+  return id_;
+}
 ObjFlags ObjectPtrBase::flags() const { return flags_; }
-Domain* ObjectPtrBase::domain() const { return domain_; }
+Domain* ObjectPtrBase::domain() const {
+  if (cached_) {
+    return cached_->domain;
+  }
+  return domain_;
+}
 
 void ObjectPtrBase::SetFlags(ObjFlags flags) { flags_ = flags; }
 
@@ -70,6 +80,8 @@ Ptr<Obj> const& ObjectPtrBase::LoadCached() {
   cached_ = DomainGraph{domain_}.LoadRoot(id_);
   if (cached_) {
     flags_ = flags_ & ~ObjFlags::kUnloaded;
+    id_ = cached_->obj_id;
+    domain_ = cached_->domain;
   }
   return cached_;
 }
@@ -85,8 +97,12 @@ void ObjectPtrBase::Save() const {
 }
 
 void ObjectPtrBase::Reset() {
+  if (cached_) {
+    id_ = cached_->obj_id;
+    domain_ = cached_->domain;
+  }
   cached_.Reset();
-  flags_ = flags_ & ObjFlags::kUnloaded;
+  flags_ = flags_ | ObjFlags::kUnloaded;
 }
 
 Ptr<Obj> const& ObjectPtrBase::cached() const { return cached_; }
@@ -128,9 +144,31 @@ using ObjPtrBaseSerializer =
 
 SeriResult ObjPtrBaseSerializer::Seri(Archive& archive,
                                       Meta<ObjectPtrBase const> meta) {
-  TRY_RESULT((archive.buffer().Write(DataTag{meta.value.id_})));
-  TRY_RESULT((archive.buffer().Write(DataTag{meta.value.flags_})));
-  if (meta.value.cached_) {
+  // Mutation is opt-in to a scoped operation on an owned mutable graph. The
+  // ordinary persistence/publication walk leaves this callback unset.
+  archive.buffer().domain_graph->NotifyObjectReference(
+      const_cast<ObjectPtrBase&>(meta.value));
+  if (meta.value.id_.is_valid()) {
+    archive.buffer().domain_graph->NotifyCloneReference(meta.value.id_);
+  }
+  ObjId const serialized_id =
+      archive.buffer().domain_graph->CloneSaveRemapId(meta.value.id_);
+  TRY_RESULT((archive.buffer().Write(DataTag{serialized_id})));
+  ObjFlags::Type publish_flag_bits =
+      static_cast<ObjFlags::Type>(meta.value.flags_);
+  if (archive.buffer().domain_graph->serialization_scope ==
+          GraphSerializationScope::MaterializedPublication &&
+      meta.value.cached_) {
+    ObjFlags::Type const lazy_flags =
+        static_cast<ObjFlags::Type>(ObjFlags::kUnloadedByDefault) |
+        static_cast<ObjFlags::Type>(ObjFlags::kUnloaded);
+    publish_flag_bits = static_cast<ObjFlags::Type>(
+        publish_flag_bits & static_cast<ObjFlags::Type>(~lazy_flags));
+  }
+  ObjFlags const publish_flags{publish_flag_bits};
+  TRY_RESULT((archive.buffer().Write(DataTag{publish_flags})));
+  if (meta.value.cached_ &&
+      archive.buffer().domain_graph->CloneSaveShouldTraverse(meta.value.id_)) {
     TRY_RESULT(archive.buffer().domain_graph->SaveRoot(meta.value.cached_,
                                                        meta.value.id_));
   }
@@ -142,12 +180,20 @@ SeriResult ObjPtrBaseSerializer::Deseri(Archive& archive,
   meta.value.domain_ = archive.buffer().domain_graph->domain;
   TRY_RESULT((archive.buffer().Read(DataTag{meta.value.id_})));
   TRY_RESULT((archive.buffer().Read(DataTag{meta.value.flags_})));
-  meta.value.cached_.Reset();
   if (meta.value.is_valid() &&
       (meta.value.flags_ & ObjFlags::kUnloadedByDefault) == 0 &&
       (meta.value.flags_ & ObjFlags::kUnloaded) == 0) {
+    // cached_ keeps a live instance with this id alive through the lookup, so
+    // a re-read reference keeps identity instead of rebuilding the object.
     TRY_RESULT(archive.buffer().domain_graph->LoadRoot(meta.value.id_,
                                                        meta.value.cached_));
+  } else if (meta.value.is_valid() &&
+             archive.buffer().domain_graph->retain_loaded_references) {
+    // Preserve already constructed snapshot children without loading absent
+    // lazy references or changing their serialized flags.
+    meta.value.cached_ = meta.value.domain_->Find(meta.value.id_);
+  } else {
+    meta.value.cached_.Reset();
   }
   return Ok{seri::good};
 }

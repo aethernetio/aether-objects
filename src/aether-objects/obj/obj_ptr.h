@@ -26,7 +26,7 @@
 #include "aether-miscpp/serialization/binary_archive.h"
 #include "aether-miscpp/serialization/serialization.h"
 
-#include "aether-objects/obj/domain.h"
+#include "aether-objects/obj/domain_buffer.h"
 #include "aether-objects/obj/obj_id.h"
 #include "aether-objects/obj/obj_ptr_base.h"
 #include "aether-objects/obj/registry.h"
@@ -206,33 +206,6 @@ class ObjPtr : public ObjectPtrBase {
 };
 
 template <typename T>
-template <typename... TArgs>
-ObjPtr<T> ObjPtr<T>::Create(CreateWith create_arg, TArgs&&... args) {
-  static_assert(obj_ptr_internal::IsObjType<T>::value,
-                "T Must be an object type");
-  auto* domain = create_arg.domain;
-  auto obj_id = create_arg.obj_id.value_or(ObjId::GenerateUnique());
-  auto flags = create_arg.flags.value_or(ObjFlags{});
-  static_assert(
-      std::is_constructible_v<T, ObjProp, TArgs...>,
-      "Class must be constructible with passed arguments and Domain*");
-  auto ptr = MakePtr<T>(ObjProp{domain, obj_id}, std::forward<TArgs>(args)...);
-  domain->AddObject(obj_id, ptr);
-
-  return ObjPtr<T>(domain, obj_id, flags, std::move(ptr));
-}
-
-template <typename T>
-ObjPtr<T> ObjPtr<T>::Declare(CreateWith create_arg) {
-  static_assert(obj_ptr_internal::IsObjType<T>::value,
-                "T Must be an object type");
-  auto* domain = create_arg.domain;
-  auto obj_id = create_arg.obj_id.value_or(ObjId::GenerateUnique());
-  auto flags = create_arg.flags.value_or(ObjFlags::kUnloaded);
-  return ObjPtr<T>(domain, obj_id, flags);
-}
-
-template <typename T>
 ObjPtr<T> ObjPtr<T>::MakeFromThis(T* self) {
   static_assert(obj_ptr_internal::IsObjType<T>::value,
                 "T Must be an object type");
@@ -309,16 +282,6 @@ Ptr<T> ObjPtr<T>::Load() const&& {
 template <typename T>
 ObjPtr<T> ObjPtr<T>::Clone() const {
   return Clone(ObjId::GenerateUnique());
-}
-
-template <typename T>
-ObjPtr<T> ObjPtr<T>::Clone(ObjId obj_id) const {
-  assert(is_valid() && "Invalid clone ptr");
-  assert(obj_id.is_valid() && "Invalid object ID");
-  auto ptr = DomainGraph{domain()}.template LoadCopy<T>(id(), obj_id);
-  return ObjPtr<T>{domain(), obj_id,
-                   static_cast<std::uint8_t>(flags() & ~ObjFlags::kUnloaded),
-                   std::move(ptr)};
 }
 
 template <typename U, typename Func>

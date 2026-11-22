@@ -153,11 +153,12 @@ void PtrBase::BuildDecrementGraph(RefTree& ref_tree) {
          "reachable_ref_count overflow");
   root.value.reachable_ref_count++;
   auto const root_index = root.index;
-  BuildDecrementGraphImpl(this, ref_tree, root_index);
+  BuildDecrementGraphImpl(this, ref_tree, root_index, this);
 }
 
 void PtrBase::BuildDecrementGraphImpl(PtrBase const* ptr, RefTree& tree,
-                                      RefTree::Index head_index) {
+                                      RefTree::Index head_index,
+                                      PtrBase const* releasing) {
   auto& head = tree.get(head_index);
   if (head.children_expanded) {
     return;
@@ -167,10 +168,18 @@ void PtrBase::BuildDecrementGraphImpl(PtrBase const* ptr, RefTree& tree,
   struct Arg {
     RefTree& tree;
     RefTree::Index head_index;
+    PtrBase const* releasing;
   };
 
   auto visit_children = [](void* arg, PtrBase const* child) {
-    auto [tree, head_index] = *static_cast<Arg*>(arg);
+    auto [tree, head_index, releasing] = *static_cast<Arg*>(arg);
+    // The releasing pointer is already counted once at the root. A back-link
+    // can reach its containing object and visit the same member again. That
+    // member will disappear; it is not an edge that keeps the graph alive.
+    // Other pointers to the same target remain ordinary surviving edges.
+    if (child == releasing) {
+      return;
+    }
     auto const pointer = reinterpret_cast<std::uintptr_t>(child->ptr_storage_);
     auto const ref_count = child->ptr_storage_->ref_counters.main_refs;
     auto& node = tree.Emplace(pointer, ref_count);
@@ -181,11 +190,11 @@ void PtrBase::BuildDecrementGraphImpl(PtrBase const* ptr, RefTree& tree,
     auto const child_index = node.index;
     tree.get(head_index).PushChild(child_index);
     if (!node.children_expanded) {
-      BuildDecrementGraphImpl(child, tree, child_index);
+      BuildDecrementGraphImpl(child, tree, child_index, releasing);
     }
   };
 
-  auto arg = Arg{tree, head_index};
+  auto arg = Arg{tree, head_index, releasing};
 
   ptr->ptr_storage_->manage_table->visit_children(ptr, &arg, visit_children);
 }

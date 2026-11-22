@@ -14,17 +14,23 @@
  * limitations under the License.
  */
 
-#include "aether-objects/obj/domain.h"
+#include "aether-objects/obj/obj.h"
 
 #include <algorithm>
+#include <cstdlib>
 
-#include "aether-objects/obj/obj.h"
+#include "aether-objects/obj/domain.h"
 
 #include "aether-objects/log.h"
 
 namespace ae {
 
-DomainGraph::DomainGraph(Domain* domain) : domain(domain) { assert(domain); }
+DomainGraph::DomainGraph(Domain* domain) : DomainGraph(domain, GraphSerializationScope::LocalPersistent) {}
+
+DomainGraph::DomainGraph(Domain* domain, GraphSerializationScope scope)
+    : domain(domain), serialization_scope(scope) {
+  assert(domain);
+}
 
 Ptr<Obj> DomainGraph::LoadRoot(ObjId obj_id) {
   Ptr<Obj> ptr;
@@ -38,9 +44,17 @@ seri::SeriResult DomainGraph::LoadRoot(ObjId obj_id, Ptr<Obj>& ptr) {
   if (!obj_id.is_valid()) {
     return Error{seri::read_error};
   }
-  // if already loaded
-  if (ptr = domain->Find(obj_id); ptr) {
+  if (ptr = domain->FindLocal(obj_id); ptr) {
     return Ok{seri::good};
+  }
+  // A cold local object shadows an already-loaded ancestor with the same ID.
+  // Use the explicit snapshot namespace when hydration redirects layer reads.
+  auto& lookup_storage = load_storage_ != nullptr
+                             ? *load_storage_ : domain->domain_storage();
+  if (lookup_storage.Enumerate(obj_id).empty()) {
+    if (ptr = domain->Find(obj_id); ptr) {
+      return Ok{seri::good};
+    }
   }
 
   auto* factory = domain->GetMostRelatedFactory(obj_id);
@@ -48,13 +62,15 @@ seri::SeriResult DomainGraph::LoadRoot(ObjId obj_id, Ptr<Obj>& ptr) {
     return Error{seri::read_error};
   }
 
+  // Load marks belong to an instance: a previous instance with this id was
+  // released, so its marks must not skip layers of the new one.
+  cycle_detector.Remove(obj_id);
   ptr = domain->ConstructObj(*factory, obj_id);
-  auto result = factory->load(this, ptr, obj_id);
-  if (result && result->IsErr()) {
-    domain->RemoveObject(ptr.get());
-    ptr.Reset();
+  LoadStoredLayers(ptr, obj_id);
+  if (!ptr) {
+    return Error{seri::read_error};
   }
-  return result.value_or(Ok{seri::good});
+  return Ok{seri::good};
 }
 
 Ptr<Obj> DomainGraph::LoadCopyImpl(ObjId ref_id, ObjId copy_id) {
@@ -73,18 +89,32 @@ Ptr<Obj> DomainGraph::LoadCopyImpl(ObjId ref_id, ObjId copy_id) {
   }
 
   auto ptr = domain->ConstructObj(*factory, copy_id);
-  // load new object with ref_id
-  auto result = factory->load(this, ptr, ref_id);
-  if (result && result->IsErr()) {
-    domain->RemoveObject(ptr.get());
+  LoadStoredLayers(ptr, ref_id);
+  if (!ptr) {
     return {};
   }
   return ptr;
 }
 
+void DomainGraph::LoadStoredLayers(Ptr<Obj>& obj, ObjId storage_id) {
+  for (auto const class_id : domain->KnownStoredClasses(storage_id)) {
+    auto* layer = domain->FindClassFactory(class_id);
+    assert(layer && layer->load);
+    auto result = layer->load(this, obj, storage_id);
+    if (result && result->IsErr()) {
+      domain->RemoveObject(obj.get());
+      obj.Reset();
+      return;
+    }
+  }
+}
+
 seri::SeriResult DomainGraph::SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id) {
   if (!ptr) {
     return Error{seri::write_error};
+  }
+  if (clone_save_remap_ != nullptr && !CloneSaveShouldTraverse(obj_id)) {
+    return Ok{seri::good};
   }
   if (auto* factory = domain->FindClassFactory(ptr->GetClassId());
       factory != nullptr) {
@@ -94,13 +124,51 @@ seri::SeriResult DomainGraph::SaveRoot(Ptr<Obj> const& ptr, ObjId obj_id) {
   return Error{seri::write_error};
 }
 
+ObjId DomainGraph::CloneSaveRemapId(ObjId id) const {
+  if (clone_save_remap_ == nullptr || !id.is_valid()) {
+    return id;
+  }
+  if (auto it = clone_save_remap_->find(id.id()); it != clone_save_remap_->end()) {
+    return ObjId{it->second};
+  }
+  return id;
+}
+
+bool DomainGraph::CloneSaveShouldTraverse(ObjId id) const {
+  if (clone_save_remap_ == nullptr) {
+    return true;
+  }
+  return clone_save_remap_->find(id.id()) != clone_save_remap_->end();
+}
+
 DomainLoad DomainGraph::GetReader(DomainQuery const& query) {
-  return domain->storage_->Load(query);
+  if (load_storage_ != nullptr) {
+    // An explicit snapshot owns the entire read view, including absent layers.
+    return load_storage_->Load(query);
+  }
+  for (auto* current = domain; current != nullptr;
+       current = current->parent_domain()) {
+    auto load = current->domain_storage().Load(query);
+    if (load.result != DomainLoadResult::kEmpty) {
+      return load;
+    }
+  }
+  return DomainLoad{DomainLoadResult::kEmpty, {}};
 }
 
 std::unique_ptr<IDomainStorageWriter> DomainGraph::GetWriter(
     DomainQuery const& query) {
-  auto writer = domain->storage_->Store(query);
+  DomainQuery store_query = query;
+  store_query.force_materialize =
+      store_query.force_materialize || force_materialize;
+  if (clone_save_remap_ != nullptr) {
+    store_query.id = CloneSaveRemapId(store_query.id);
+    if (store_query.object_scope) {
+      store_query.object_scope->root_id = CloneSaveRemapId(store_query.object_scope->root_id);
+      store_query.object_scope->parent_root_id = CloneSaveRemapId(store_query.object_scope->parent_root_id);
+    }
+  }
+  auto writer = domain->storage_->Store(store_query);
   assert(writer && "Writer must be created!");
   return writer;
 }
@@ -108,13 +176,22 @@ std::unique_ptr<IDomainStorageWriter> DomainGraph::GetWriter(
 Domain::Domain(IDomainStorage& storage) : Domain(storage, nullptr) {}
 
 Domain::Domain(IDomainStorage& storage, Env* env)
-    : storage_{&storage}, registry_{&Registry::GetRegistry()}, env_{env} {}
+    : storage_{&storage},
+      registry_{&Registry::GetRegistry()},
+      env_{env},
+      registered_objects_{std::make_shared<DomainRegisteredObjects>()} {}
+
+void DomainRegisteredObjects::Add(ObjId id, Ptr<Obj> const& obj) {
+  by_id[id.id()] = obj;
+}
+
+void DomainRegisteredObjects::Remove(ObjId::Type id) {
+  by_id.erase(id);
+}
 
 Ptr<Obj> Domain::ConstructObj(Factory const& factory, ObjId obj_id) {
   Ptr<Obj> o = factory.create();
   AddObject(obj_id, o);
-  o->domain = this;
-  o->obj_id = obj_id;
   return o;
 }
 
@@ -126,25 +203,100 @@ bool Domain::IsExisting(uint32_t class_id) const {
   return registry_->IsExisting(class_id);
 }
 
-Ptr<Obj> Domain::Find(ObjId obj_id) const {
-  if (auto it = id_objects_.find(obj_id.id()); it != id_objects_.end()) {
+Ptr<Obj> Domain::FindLocal(ObjId obj_id) const {
+  if (!registered_objects_) {
+    return {};
+  }
+  if (auto it = registered_objects_->by_id.find(obj_id.id());
+      it != registered_objects_->by_id.end()) {
     return it->second.Lock();
   }
   return {};
 }
 
-void Domain::AddObject(ObjId id, Ptr<Obj> const& obj) {
-  id_objects_[id.id()] = obj;
+Ptr<Obj> Domain::Find(ObjId obj_id) const {
+  for (Domain const* current = this; current != nullptr;
+       current = current->parent_domain_) {
+    if (auto found = current->FindLocal(obj_id)) {
+      return found;
+    }
+  }
+  return {};
 }
 
-void Domain::RemoveObject(Obj* ptr) { id_objects_.erase(ptr->obj_id.id()); }
+ObjId Domain::GenerateObjectId() {
+  for (Domain* current = this; current != nullptr;
+       current = current->parent_domain_) {
+    auto* sequence = current->object_id_sequence_;
+    if (sequence == nullptr) continue;
+    if (sequence->next_ == 0 || sequence->next_ > sequence->last_) {
+      std::abort();
+    }
+    return ObjId{static_cast<ObjId::Type>(sequence->next_++)};
+  }
+  return ObjId::GenerateUnique();
+}
+
+void Domain::AddObject(ObjId id, Ptr<Obj> const& obj) {
+  if (obj) {
+    if (!obj->has_object_scope()) obj->SetObjectScope(object_scope_);
+    obj->registered_objects_ = registered_objects_;
+    obj->domain = this;
+    obj->obj_id = id;
+  }
+  registered_objects_->Add(id, obj);
+}
+
+void Domain::RemoveObject(Obj* ptr) {
+  if (ptr == nullptr || !ptr->registered_objects_) {
+    return;
+  }
+  ptr->registered_objects_->Remove(ptr->obj_id.id());
+}
+
+std::vector<std::uint32_t> Domain::KnownStoredClasses(ObjId id) {
+  auto classes = storage_->Enumerate(id);
+  // A local stored definition shadows ancestors even if none of its classes
+  // are registered in this executable. Only an absent definition falls back.
+  if (classes.empty()) {
+    return parent_domain_ != nullptr ? parent_domain_->KnownStoredClasses(id)
+                                     : std::vector<std::uint32_t>{};
+  }
+  classes.erase(
+      std::remove_if(std::begin(classes), std::end(classes),
+                     [this](auto const& c) { return !IsExisting(c); }),
+      std::end(classes));
+  std::sort(std::begin(classes), std::end(classes),
+            [this](auto left, auto right) {
+              if (left == right) {
+                return false;
+              }
+              if (registry_->GenerationDistance(right, left) > 0) {
+                return false;
+              }
+              if (registry_->GenerationDistance(left, right) > 0) {
+                return true;
+              }
+              return left < right;
+            });
+  return classes;
+}
 
 Factory* Domain::GetMostRelatedFactory(ObjId id) {
-  auto classes = storage_->Enumerate(id);
+  auto const enumerated = storage_->Enumerate(id);
+  if (enumerated.empty()) {
+    return parent_domain_ != nullptr ? parent_domain_->GetMostRelatedFactory(id)
+                                     : nullptr;
+  }
+  auto classes = KnownStoredClasses(id);
+  if (classes.empty()) {
+    return nullptr;
+  }
+
 #ifndef NDEBUG
   auto class_names = std::vector<std::string_view>{};
-  class_names.reserve(classes.size());
-  for (auto cid : classes) {
+  class_names.reserve(enumerated.size());
+  for (auto cid : enumerated) {
     class_names.emplace_back(registry_->ClassName(cid));
   }
 
@@ -153,46 +305,27 @@ Factory* Domain::GetMostRelatedFactory(ObjId id) {
                       class_names);
 #else
   AE_LOG_MACRO_TAGGED(::ae::objects_tele::kDomainEnumeratedClasses,
-                      "For obj {} enumerated classes [{}]", id.id(), classes);
+                      "For obj {} enumerated classes [{}]", id.id(), enumerated);
 #endif
 
-  // Remove all unsupported classes.
-  classes.erase(
-      std::remove_if(std::begin(classes), std::end(classes),
-                     [this](auto const& c) { return !IsExisting(c); }),
-      std::end(classes));
+  bool const had_unknown_stored_class = [&] {
+    for (auto const class_id : enumerated) {
+      if (!IsExisting(class_id) && class_id != Obj::kClassId) {
+        return true;
+      }
+    }
+    return false;
+  }();
 
-  if (classes.empty()) {
+  if (had_unknown_stored_class) {
     return nullptr;
   }
 
-  // Build inheritance chain.
-  // from base to derived.
-  std::sort(std::begin(classes), std::end(classes),
-            [this](auto left, auto right) {
-              if (registry_->GenerationDistance(right, left) > 0) {
-                return false;
-              }
-              if (registry_->GenerationDistance(left, right) >= 0) {
-                return true;
-              }
-              // All classes must be in one inheritance chain.
-              assert(false);
-              return false;
-            });
-
-  // Find the Final class for the most derived class provided and create it.
-  for (auto& f : registry_->factories) {
-    if (IsLast(f.first)) {
-      // check with most derived class
-      int distance = registry_->GenerationDistance(classes.back(), f.first);
-      if (distance >= 0) {
-        return &f.second;
-      }
-    }
+  if (classes.back() == Obj::kClassId) {
+    return nullptr;
   }
 
-  return nullptr;
+  return FindClassFactory(classes.back());
 }
 
 Factory* Domain::FindClassFactory(std::uint32_t class_id) {

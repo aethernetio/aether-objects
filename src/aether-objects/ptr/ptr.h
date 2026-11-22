@@ -62,7 +62,8 @@ class PtrBase {
   std::uint16_t DecrementGraphCount();
   void BuildDecrementGraph(RefTree& ref_tree);
   static void BuildDecrementGraphImpl(PtrBase const* ptr, RefTree& tree,
-                                      RefTree::Index head_index);
+                                      RefTree::Index head_index,
+                                      PtrBase const* releasing);
   void Destroy();
   void Free();
 

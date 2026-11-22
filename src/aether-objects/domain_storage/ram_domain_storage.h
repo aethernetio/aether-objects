@@ -39,12 +39,22 @@ class RamDomainStorage : public IDomainStorage {
 
   ClassList Enumerate(ObjId const& obj_id) override;
   DomainLoad Load(DomainQuery const& query) override;
+  bool HasVersionAfter(DomainQuery const& query) override;
   void Remove(ObjId const& obj_id) override;
   void CleanUp() override;
+  std::optional<ObjectScope> ReadObjectScope(ObjId const& id) const override {
+    auto it = object_scopes.find(id);
+    return it == object_scopes.end() ? std::nullopt : std::optional<ObjectScope>{it->second};
+  }
+  bool IsConstantObject(ObjId const& id) const override {
+    auto scope = ReadObjectScope(id);
+    return scope && scope->is_constant;
+  }
 
   void SaveData(DomainQuery const& query, ObjectData&& data);
 
   ObjClassData state;
+  std::map<ObjId, ObjectScope> object_scopes;
   bool write_lock = false;
 };
 }  // namespace ae
