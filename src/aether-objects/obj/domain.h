@@ -33,11 +33,11 @@
 #include "aether-objects/ptr/ptr_view.h"
 
 #include "aether-objects/env/env.h"
+#include "aether-objects/obj/domain_buffer.h"
 #include "aether-objects/obj/idomain_storage.h"
 #include "aether-objects/obj/obj_id.h"
 #include "aether-objects/obj/registry.h"
 #include "aether-objects/obj/version_iterator.h"
-#include "aether-objects/obj/domain_buffer.h"
 
 namespace ae {
 
@@ -145,8 +145,9 @@ class DomainGraph {
   void SetLoadStorage(IDomainStorage* storage) { load_storage_ = storage; }
 
   // Optional operation-local reference walk. Clone finalization uses this to
-  // relocate serialized pointer fields, including fields absent from reflection.
-  // The context must outlive this DomainGraph; normal Save has no visitor.
+  // relocate serialized pointer fields, including fields absent from
+  // reflection. The context must outlive this DomainGraph; normal Save has no
+  // visitor.
   using ObjectReferenceVisitorFn = void (*)(void*, ObjectPtrBase&);
   void SetObjectReferenceVisitor(void* context, ObjectReferenceVisitorFn fn) {
     object_reference_context_ = context;
@@ -157,7 +158,6 @@ class DomainGraph {
       object_reference_visitor_(object_reference_context_, reference);
     }
   }
-
 
   using CloneSaveRemapTable = std::unordered_map<ObjId::Type, ObjId::Type>;
 
@@ -189,7 +189,8 @@ class DomainGraph {
       GraphSerializationScope::LocalPersistent};
   bool force_materialize{false};
   // Keep preconstructed references during scoped hydration, including lazy
-  // references. Missing lazy objects remain unloaded; their flags are unchanged.
+  // references. Missing lazy objects remain unloaded; their flags are
+  // unchanged.
   bool retain_loaded_references{false};
 
  private:
@@ -235,8 +236,10 @@ class Domain {
   ObjId GenerateObjectId();
 
   void SetObjectScope(ObjId root_id) {
-    object_scope_ = ObjectScope{root_id,
-        parent_domain_ ? parent_domain_->object_scope().root_id : ObjId{}, false};
+    object_scope_ = ObjectScope{
+        root_id,
+        parent_domain_ ? parent_domain_->object_scope().root_id : ObjId{},
+        false};
   }
   ObjectScope object_scope() const { return object_scope_; }
 
@@ -274,8 +277,10 @@ class Domain::ObjectIdSequence {
 
  public:
   ObjectIdSequence(Domain& domain, ObjId first, ObjId last)
-      : domain_{domain}, previous_{domain.object_id_sequence_},
-        next_{first.id()}, last_{last.id()} {
+      : domain_{domain},
+        previous_{domain.object_id_sequence_},
+        next_{first.id()},
+        last_{last.id()} {
     assert(first.is_valid() && first.id() <= last.id());
     domain_.object_id_sequence_ = this;
   }
@@ -299,12 +304,18 @@ template <typename T>
 std::optional<seri::SeriResult> DomainGraph::Load(T& obj, ObjId obj_id) {
   if constexpr (std::is_same_v<T, Obj>) {
     if (load_storage_ != nullptr) {
-      if (auto scope = load_storage_->ReadObjectScope(obj_id)) obj.SetObjectScope(*scope);
+      if (auto scope = load_storage_->ReadObjectScope(obj_id))
+        obj.SetObjectScope(*scope);
     } else {
-      for (auto* current = domain; current != nullptr; current = current->parent_domain()) {
+      for (auto* current = domain; current != nullptr;
+           current = current->parent_domain()) {
         auto scope = current->domain_storage().ReadObjectScope(obj_id);
-        if (scope) { obj.SetObjectScope(*scope); break; }
-        // A local object without metadata is not a hole in the parent namespace.
+        if (scope) {
+          obj.SetObjectScope(*scope);
+          break;
+        }
+        // A local object without metadata is not a hole in the parent
+        // namespace.
         if (!current->domain_storage().Enumerate(obj_id).empty()) break;
       }
     }
@@ -363,6 +374,15 @@ seri::SeriResult DomainGraph::LoadVersion(Version<V> version, T& obj,
   }
   if (load.result != DomainLoadResult::kLoaded || load.reader == nullptr) {
     return Error{seri::read_error};
+  }
+
+  if constexpr (std::is_same_v<T, Obj> && V == 0) {
+    // Original Obj/S0 had no fields. The native origin reference is optional
+    // when upgrading that empty base layer; derived business data still loads.
+    if (load.reader->IsEmpty() == true) {
+      obj.SetOriginId(ObjId{});
+      return Ok{seri::good};
+    }
   }
 
   auto bin_archive =
@@ -436,7 +456,9 @@ seri::SeriResult DomainGraph::SaveVersion(Version<V> version, T const& obj,
     query.object_scope = obj.object_scope();
   }
   if (serialization_scope == GraphSerializationScope::LocalPersistent) {
-    if constexpr (requires { obj.ShouldForceMaterializeLayer(T::kClassId, V); }) {
+    if constexpr (requires {
+                    obj.ShouldForceMaterializeLayer(T::kClassId, V);
+                  }) {
       query.force_materialize = obj.ShouldForceMaterializeLayer(T::kClassId, V);
     }
   }
@@ -476,7 +498,8 @@ struct Serializer<BinaryArchive<DomainBuffer>, T> {
   }
 
   SeriResult Deseri(Archive& arch, Meta<T> meta_val) const {
-    // Node::Load base_ only: Seri() persists ae::Obj via Save side effects, no inline bytes.
+    // Node::Load base_ only: Seri() persists ae::Obj via Save side effects, no
+    // inline bytes.
     if (arch.buffer().reader != nullptr &&
         std::is_same_v<std::decay_t<T>, Obj>) {
       return Ok{good};

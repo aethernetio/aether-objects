@@ -59,6 +59,8 @@ class RamDomainStorageReader final : public IDomainStorageReader {
   }
   ~RamDomainStorageReader() override { storage->write_lock = false; }
 
+  std::optional<bool> IsEmpty() override { return data_buffer.empty(); }
+
   seri::SeriResult Read(seri::SizeReadTag data) override {
     std::uint32_t u_size{};
     TRY_RESULT(Read(seri::DataTag{u_size}));

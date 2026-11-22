@@ -186,6 +186,14 @@ class FstreamStorageReader final : public IDomainStorageReader {
   explicit FstreamStorageReader(std::ifstream&& f) : file{std::move(f)} {}
   ~FstreamStorageReader() override { file.close(); }
 
+  std::optional<bool> IsEmpty() override {
+    if (file.peek() == std::ifstream::traits_type::eof() && file.eof() &&
+        !file.bad()) {
+      return true;
+    }
+    return file.good() ? std::optional<bool>{false} : std::nullopt;
+  }
+
   seri::SeriResult Read(seri::SizeReadTag data) override {
     std::uint32_t u_size{};
     TRY_RESULT(Read(seri::DataTag{u_size}));

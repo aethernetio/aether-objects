@@ -37,7 +37,8 @@ enum class DomainLoadResult : std::uint8_t {
 using ObjectData = std::vector<std::uint8_t>;
 using ClassList = std::vector<std::uint32_t>;
 
-// Domain membership is object-storage metadata, independent of class S versions.
+// Domain membership is object-storage metadata, independent of class S
+// versions.
 struct ObjectScope {
   ObjId root_id{};
   ObjId parent_root_id{};
@@ -71,6 +72,10 @@ class IDomainStorageReader {
  public:
   virtual ~IDomainStorageReader() = default;
 
+  // Optional non-consuming query for legacy empty Obj/S0 records. Unknown
+  // backends retain strict decoding rather than masking a failed read.
+  virtual std::optional<bool> IsEmpty() { return std::nullopt; }
+
   virtual seri::SeriResult Read(seri::SizeReadTag data) = 0;
   virtual seri::SeriResult Read(seri::DataReadTag data) = 0;
 };
@@ -88,9 +93,7 @@ class IDomainStorage {
   virtual ~IDomainStorage() = default;
   // Immutable shared identity, independent of whether an object is loaded.
   // Storage decorators forward this query to preserve clone boundaries.
-  virtual bool IsConstantObject(ObjId const& /*obj_id*/) const {
-    return false;
-  }
+  virtual bool IsConstantObject(ObjId const& /*obj_id*/) const { return false; }
   /**
    * \brief Store an ObjectData by query.
    */
