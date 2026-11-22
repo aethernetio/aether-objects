@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "aether-miscpp/serialization/binary_archive.h"
@@ -36,10 +37,22 @@ enum class DomainLoadResult : std::uint8_t {
 using ObjectData = std::vector<std::uint8_t>;
 using ClassList = std::vector<std::uint32_t>;
 
+// Domain membership is object-storage metadata, independent of class S
+// versions.
+struct ObjectScope {
+  ObjId root_id{};
+  ObjId parent_root_id{};
+  bool is_constant{false};
+  bool operator==(ObjectScope const&) const = default;
+};
+
 struct DomainQuery {
   ObjId id;
   std::uint32_t class_id;
   std::uint8_t version;
+  bool force_materialize{false};
+  std::optional<ObjectScope> object_scope{};
+  bool force_scope_metadata{false};
 };
 
 // BinaryBuffer implementation for storage writer
@@ -59,6 +72,10 @@ class IDomainStorageReader {
  public:
   virtual ~IDomainStorageReader() = default;
 
+  // Optional non-consuming query for legacy empty Obj/S0 records. Unknown
+  // backends retain strict decoding rather than masking a failed read.
+  virtual std::optional<bool> IsEmpty() { return std::nullopt; }
+
   virtual seri::SeriResult Read(seri::SizeReadTag data) = 0;
   virtual seri::SeriResult Read(seri::DataReadTag data) = 0;
 };
@@ -74,6 +91,9 @@ struct DomainLoad {
 class IDomainStorage {
  public:
   virtual ~IDomainStorage() = default;
+  // Immutable shared identity, independent of whether an object is loaded.
+  // Storage decorators forward this query to preserve clone boundaries.
+  virtual bool IsConstantObject(ObjId const& /*obj_id*/) const { return false; }
   /**
    * \brief Store an ObjectData by query.
    */
@@ -87,6 +107,20 @@ class IDomainStorage {
    * \brief Load object data by query.
    */
   virtual DomainLoad Load(DomainQuery const& query) = 0;
+  // Metadata query: do not open/trace hundreds of absent readers when the
+  // storage already has a native version index. Legacy backends keep the same
+  // loaded/removed semantics through this default implementation.
+  virtual bool HasVersionAfter(DomainQuery const& query) {
+    for (unsigned version = static_cast<unsigned>(query.version) + 1U;
+         version <= 255U; ++version) {
+      auto const load =
+          Load({query.id, query.class_id, static_cast<std::uint8_t>(version)});
+      if (load.result != DomainLoadResult::kEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   /**
    * \brief Remove object data by query
@@ -96,6 +130,10 @@ class IDomainStorage {
    * \brief Clean up the whole storage.
    */
   virtual void CleanUp() = 0;
+  // Missing differs from an explicitly stored top-level mutable membership.
+  virtual std::optional<ObjectScope> ReadObjectScope(ObjId const&) const {
+    return std::nullopt;
+  }
 };
 }  // namespace ae
 

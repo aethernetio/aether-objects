@@ -23,8 +23,12 @@
 #include "aether-objects/log.h"
 
 namespace ae {
+
+void RegisterObjLayerFactory(Registry& registry);
+
 Registry& Registry::GetRegistry() {
   static Registry registry;
+  RegisterObjLayerFactory(registry);
   return registry;
 }
 
@@ -49,7 +53,7 @@ void Registry::RegisterClass(uint32_t cls_id, std::uint32_t base_id,
 #endif    // !NDEBUG
   factories.emplace(cls_id, std::move(factory));
   // TODO: maybe remove this check
-  if (base_id != crc32::from_literal("Obj").value) {
+  if (cls_id != base_id) {
     relations[base_id].push_back(cls_id);
   }
 }

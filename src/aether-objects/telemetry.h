@@ -38,6 +38,14 @@ struct Identity {
   }
 };
 using ObjectTeleSink = tele::RawTeleSink<Identity, tele::AllEnabledConfig>;
+inline constexpr tele::TeleConfig kCountOnlyConfig{.count_metrics = true,
+                                                   .time_metrics = false,
+                                                   .logs_enabled = false,
+                                                   .start_time_logs = false,
+                                                   .level_module_logs = false,
+                                                   .location_logs = false,
+                                                   .name_logs = false,
+                                                   .blob_logs = false};
 inline constexpr tele::Module kModule{1, 0, 65535, "objects"};
 
 // Explicit callsite indices remain stable across translation units and boots.

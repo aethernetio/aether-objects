@@ -19,12 +19,13 @@
 
 #include "aether-miscpp/serialization/serialization.h"
 
-#include "aether-objects/obj/domain.h"
+#include "aether-objects/obj/domain_buffer.h"
 #include "aether-objects/obj/obj_id.h"
 #include "aether-objects/ptr/ptr.h"
 
 namespace ae {
 
+class Domain;
 class Obj;
 
 class ObjectPtrBase {

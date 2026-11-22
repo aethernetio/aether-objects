@@ -18,18 +18,64 @@
 
 #include "aether-miscpp/crc.h"
 
+#include "aether-objects/obj/domain.h"
+#include "aether-objects/obj/registry.h"
+
 namespace ae {
+
+Ptr<Obj> ObjLayerFactoryCreateMustNotRun() { return {}; }
+
+std::optional<seri::SeriResult> LoadObjLayer(DomainGraph* domain_graph,
+                                             Ptr<Obj>& obj, ObjId storage_id) {
+  return domain_graph->Load(static_cast<Obj&>(*obj.get()), storage_id);
+}
+
+std::optional<seri::SeriResult> SaveObjLayerUnused(DomainGraph*,
+                                                   Ptr<Obj> const&, ObjId) {
+  return Ok{seri::good};
+}
+
+void RegisterObjLayerFactory(Registry& registry) {
+  if (registry.IsExisting(Obj::kClassId)) {
+    return;
+  }
+  registry.RegisterClass(Obj::kClassId, Obj::kClassId,
+                         Factory{
+                             ObjLayerFactoryCreateMustNotRun,
+                             LoadObjLayer,
+                             SaveObjLayerUnused,
+#ifndef NDEBUG
+                             std::string{"ae::Obj"},
+                             Obj::kClassId,
+                             Obj::kClassId,
+#endif
+                         });
+}
+
 Obj::Obj() = default;
 
-Obj::Obj(ObjProp prop) : domain{prop.domain}, obj_id{prop.id} {}
+Obj::Obj(ObjProp prop) : domain{prop.domain}, obj_id{prop.id} {
+  SetObjectScope(prop.domain->object_scope());
+}
 
 Obj::~Obj() {
-  if (domain != nullptr) {
-    domain->RemoveObject(this);
+  if (registered_objects_) {
+    registered_objects_->Remove(obj_id.id());
   }
 }
 
 uint32_t Obj::GetClassId() const { return kClassId; }
+
+void Obj::SetOriginId(ObjId origin_id) {
+  if (!origin_id.is_valid() || domain == nullptr) {
+    origin_ = {};
+    return;
+  }
+  origin_ = Obj::ptr::Declare(CreateWith{domain}.with_id(origin_id).with_flags(
+      ObjFlags::kUnloadedByDefault | ObjFlags::kUnloaded));
+}
+
+ObjId Obj::origin_id() const { return origin_.id(); }
 
 namespace domain_visitor {
 std::size_t GetObjIndexImpl(Obj const* obj, std::uint32_t class_id) {

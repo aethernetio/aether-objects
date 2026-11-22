@@ -15,10 +15,14 @@
  */
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <memory>
 
 #include <unity.h>
 
+#include "aether-objects/domain_storage/file_system_std_storage.h"
+#include "aether-objects/domain_storage/ram_domain_storage.h"
 #include "aether-objects/obj/domain.h"
 #include "map_domain_storage.h"
 #include "objects/lifecycle.h"
@@ -358,6 +362,69 @@ void test_NoexceptAndOverloadedCallbacksAreNotified() {
 }  // namespace
 }  // namespace ae::test_lifecycle
 
+namespace ae::test_lifecycle {
+bool VerifyLegacyEmptyBase(IDomainStorage& storage) {
+  {
+    Domain domain{storage};
+    auto object = LifecycleObject::ptr::Create(CreateWith{domain}.with_id(901));
+    object->persisted_value = 7;
+    if (!DomainGraph{&domain}.SaveRoot(object.Load(), object.id()).IsOk())
+      return false;
+  }
+  {
+    auto writer = storage.Store({ObjId{901}, Obj::kClassId, 0});
+    if (!writer || !writer->Commit().IsOk()) return false;
+  }
+  {
+    Domain domain{storage};
+    auto object =
+        LifecycleObject::ptr::Declare(CreateWith{domain}.with_id(901));
+    if (!object.Load() || object->persisted_value != 7 ||
+        object->origin_id().is_valid())
+      return false;
+    object->SetOriginId(ObjId{999});
+    if (!DomainGraph{&domain}.SaveRoot(object.Load(), object.id()).IsOk())
+      return false;
+  }
+  Domain domain{storage};
+  auto object = LifecycleObject::ptr::Declare(CreateWith{domain}.with_id(901));
+  return object.Load() && object->persisted_value == 7 &&
+         object->origin_id() == ObjId{999};
+}
+void test_LegacyEmptyBasePreservesBusinessStateInRam() {
+  RamDomainStorage storage;
+  TEST_ASSERT_TRUE(VerifyLegacyEmptyBase(storage));
+}
+void test_ClearingOriginRemovesTheStoredIdentity() {
+  RamDomainStorage storage;
+  Domain domain{storage};
+  auto object = LifecycleObject::ptr::Create(CreateWith{domain}.with_id(902));
+  object->SetOriginId(ObjId{999});
+  TEST_ASSERT_TRUE(object->origin_id() == ObjId{999});
+  object->SetOriginId(ObjId{});
+  TEST_ASSERT_FALSE(object->origin_id().is_valid());
+}
+#if AE_FILE_SYSTEM_STD_ENABLED
+void test_LegacyEmptyBasePreservesBusinessStateOnDisk() {
+  auto previous = std::filesystem::current_path();
+  auto path =
+      std::filesystem::temp_directory_path() /
+      ("objects-legacy-base-" +
+       std::to_string(
+           std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(path);
+  std::filesystem::current_path(path);
+  bool result;
+  {
+    FileSystemStdStorage storage;
+    result = VerifyLegacyEmptyBase(storage);
+  }
+  std::filesystem::current_path(previous);
+  TEST_ASSERT_TRUE(result);
+}
+#endif
+}  // namespace ae::test_lifecycle
+
 int test_lifecycle() {
   UNITY_BEGIN();
   RUN_TEST(
@@ -375,5 +442,11 @@ int test_lifecycle() {
   RUN_TEST(
       ae::test_lifecycle::test_NestedLoadFailurePropagatesAndDoesNotNotify);
   RUN_TEST(ae::test_lifecycle::test_NoexceptAndOverloadedCallbacksAreNotified);
+  RUN_TEST(ae::test_lifecycle::test_LegacyEmptyBasePreservesBusinessStateInRam);
+  RUN_TEST(ae::test_lifecycle::test_ClearingOriginRemovesTheStoredIdentity);
+#if AE_FILE_SYSTEM_STD_ENABLED
+  RUN_TEST(
+      ae::test_lifecycle::test_LegacyEmptyBasePreservesBusinessStateOnDisk);
+#endif
   return UNITY_END();
 }
